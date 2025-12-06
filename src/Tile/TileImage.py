@@ -125,7 +125,23 @@ class TileImage(object):
             font = ImageFont.truetype(self._label_font or 'Assets/Fonts/Roboto-Bold.ttf', self._label_size or 12)
             d = ImageDraw.Draw(image)
 
-            w, h = d.textsize(self._label, font=font)
+            # Measure text size using a safe fallback path:
+            # 1) textbbox (newer Pillow)
+            # 2) textsize (older Pillow)
+            # 3) font.getsize (fallback)
+            try:
+                bbox = d.textbbox((0, 0), self._label, font=font)
+                w = bbox[2] - bbox[0]
+                h = bbox[3] - bbox[1]
+            except AttributeError:
+                try:
+                    w, h = d.textsize(self._label, font=font)
+                except AttributeError:
+                    try:
+                        w, h = font.getsize(self._label)
+                    except Exception:
+                        w, h = (image.width, 0)
+
             padding = 2
 
             pos = ((image.width - w) / 2, padding)
@@ -142,9 +158,24 @@ class TileImage(object):
             font = ImageFont.truetype(self._value_font or 'Assets/Fonts/Roboto-Light.ttf', self._value_size or 18)
             d = ImageDraw.Draw(image)
 
-            w, h = d.textsize(self._value, font=font)
-            padding = 2
+            # Measure text size using a safe fallback path:
+            # 1) textbbox (newer Pillow)
+            # 2) textsize (older Pillow)
+            # 3) font.getsize (fallback)
+            try:
+                bbox = d.textbbox((0, 0), self._value, font=font)
+                w = bbox[2] - bbox[0]
+                h = bbox[3] - bbox[1]
+            except AttributeError:
+                try:
+                    w, h = d.textsize(self._value, font=font)
+                except AttributeError:
+                    try:
+                        w, h = font.getsize(self._value)
+                    except Exception:
+                        w, h = (image.width, 0)
 
+            padding = 2
             pos = ((image.width - w) / 2, image.height - h - padding)
             d.text(pos, self._value, font=font, fill=(255, 255, 255, 128))
             return (pos[0], pos[1], w, h + padding)
