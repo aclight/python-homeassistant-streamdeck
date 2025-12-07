@@ -1,5 +1,7 @@
 # Python Elgato HomeAssistant Client
 
+![CI](https://github.com/aclight/python-homeassistant-streamdeck/actions/workflows/ci.yml/badge.svg?branch=master)
+
 ![Example Deck](ExampleDeck.jpg)
 
 This is an open source Python 3 application to control a
@@ -83,15 +85,9 @@ repository using the `src/config.yaml` will behave the same as before.
 
 ## Running Tests
 
+
 This project uses `pytest` for lightweight tests that don't require hardware.
 Install test dependencies and run tests:
-
-```bash
-python -m pip install -r requirements.txt
-python -m pytest
-```
-
-Alternatively, install the optional dev dependencies from `pyproject.toml`:
 
 ```bash
 python -m pip install .[dev]
