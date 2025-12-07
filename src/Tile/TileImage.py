@@ -7,6 +7,9 @@
 
 from PIL import Image, ImageDraw, ImageFont
 from StreamDeck.ImageHelpers import PILHelper
+import os
+import importlib.resources as pkg_resources
+from pathlib import Path
 
 
 class TileImage(object):
@@ -106,7 +109,8 @@ class TileImage(object):
             return
 
         if self._overlay_image is None:
-            self._overlay_image = Image.open(self._overlay).convert("RGBA")
+            overlay_path = self._resolve_asset_path(self._overlay)
+            self._overlay_image = Image.open(overlay_path).convert("RGBA")
 
         overlay_image = self._overlay_image.copy()
         overlay_image.thumbnail(max_size, Image.LANCZOS)
@@ -122,7 +126,9 @@ class TileImage(object):
             return None, None, None, None
 
         try:
-            font = ImageFont.truetype(self._label_font or 'Assets/Fonts/Roboto-Bold.ttf', self._label_size or 12)
+            label_font_path = (self._label_font or 'Assets/Fonts/Roboto-Bold.ttf')
+            resolved_label_font = self._resolve_asset_path(label_font_path)
+            font = ImageFont.truetype(resolved_label_font, self._label_size or 12)
             d = ImageDraw.Draw(image)
 
             # Measure text size using a safe fallback path:
@@ -155,7 +161,9 @@ class TileImage(object):
             return None, None, None, None
 
         try:
-            font = ImageFont.truetype(self._value_font or 'Assets/Fonts/Roboto-Light.ttf', self._value_size or 18)
+            value_font_path = (self._value_font or 'Assets/Fonts/Roboto-Light.ttf')
+            resolved_value_font = self._resolve_asset_path(value_font_path)
+            font = ImageFont.truetype(resolved_value_font, self._value_size or 18)
             d = ImageDraw.Draw(image)
 
             # Measure text size using a safe fallback path:
@@ -201,3 +209,31 @@ class TileImage(object):
             self._pixels = PILHelper.to_native_format(self._deck, image)
 
         return self._pixels[key]
+
+    def _resolve_asset_path(self, path):
+        """Resolve an asset path.
+
+        If `path` exists as given, return it. Otherwise, attempt to find the
+        file inside the installed `homeassistant_streamdeck` package (so assets
+        packaged inside the distribution are used).
+        """
+        if path is None:
+            raise FileNotFoundError(path)
+
+        # If the path is already a Path-like that exists, return it
+        if os.path.exists(path):
+            return path
+
+        # Try to resolve relative to the package root
+        try:
+            pkg_root = pkg_resources.files('homeassistant_streamdeck')
+            candidate = pkg_root.joinpath(path)
+            # importlib.resources.Path-like objects may not support is_file directly
+            candidate_path = Path(os.fspath(candidate))
+            if candidate_path.exists():
+                return str(candidate_path)
+        except Exception:
+            pass
+
+        # As a last resort, return the original path and let the caller handle the error
+        return path

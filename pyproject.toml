@@ -14,3 +14,18 @@ dependencies = [
     "aiohttp",
 ]
 requires-python = ">=3.8"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+"homeassistant_streamdeck" = [
+    "config.yaml",
+    "Assets/*",
+    "Assets/**",
+    "Assets/Fonts/*",
+    "Assets/Images/*",
+]
+
+[project.scripts]
+hass-streamdeck = "homeassistant_streamdeck.cli:run"

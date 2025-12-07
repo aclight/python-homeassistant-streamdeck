@@ -27,6 +27,60 @@ to help me out!
 Nothing is robust yet, and the configuration format used in the `config.yaml`
 file is not yet documented.
 
+## Configuration
+
+The project uses a YAML configuration file (`config.yaml`) to describe the
+Home Assistant connection, Stream Deck options, tile templates and screen
+layouts. When installed, the CLI will look for `./config.yaml` in the current
+working directory by default, or you can pass a custom path with
+`--config /path/to/config.yaml`.
+
+Key configuration sections:
+- **home_assistant**: host, ssl (true/false), port, `api_password` (legacy) or
+	`api_token` (long-lived access token).
+- **streamdeck**: `brightness` (0-100) and `screensaver` timeout in seconds.
+- **tiles**: list of tile templates. Each tile template defines a `type`, the
+	`class` to use (e.g. `HassTile`), `states` (a list of render states with
+	attributes such as `label`, `label_font`, `overlay`) and an `action`.
+- **screens**: pages of tiles. Each screen has a `name` and a `tiles` list with
+	`position`, `type`, `name`, and `entity_id` (or `page` when `type: page`).
+
+Example snippet (from the included `config.yaml`):
+
+```yaml
+home_assistant:
+	host: 192.168.1.142
+	ssl: False
+	port: ~
+	api_token: <your-long-lived-token>
+
+streamdeck:
+	brightness: 80
+	screensaver: ~
+
+tiles:
+	- type: "light"
+		class: 'HassTile'
+		states:
+			- state: 'on'
+				label: '{name}'
+				label_font: Assets/Fonts/Roboto-Bold.ttf
+				overlay: 'Assets/Images/light_on.png'
+		action: 'toggle'
+
+screens:
+	- name: "home"
+		tiles:
+			- position: [0, 0]
+				type: "light"
+				name: "Study"
+				entity_id: "light.study"
+```
+
+If you install via `pip`, use `hass-streamdeck --config /path/to/config.yaml`
+to point to your configuration file; running the script from the cloned
+repository using the `src/config.yaml` will behave the same as before.
+
 ## Dependencies:
 
 ### Python
