@@ -81,6 +81,45 @@ If you install via `pip`, use `hass-streamdeck --config /path/to/config.yaml`
 to point to your configuration file; running the script from the cloned
 repository using the `src/config.yaml` will behave the same as before.
 
+## Running Tests
+
+This project uses `pytest` for lightweight tests that don't require hardware.
+Install test dependencies and run tests:
+
+```bash
+python -m pip install -r requirements.txt
+python -m pytest
+```
+
+Alternatively, install the optional dev dependencies from `pyproject.toml`:
+
+```bash
+python -m pip install .[dev]
+python -m pytest
+```
+
+The tests are located under `tests/` and include checks that the packaged
+resources (config and assets) are present and that the CLI fallback copies the
+packaged `config.yaml` to a temporary file when no local `config.yaml` exists.
+
+## Getting the Packaged `config.yaml`
+
+If you've installed the package and want a copy of the canonical `config.yaml`
+to edit, you can copy it out of the installed package into your working
+directory. One simple way to do this is:
+
+```bash
+python - <<'PY'
+import importlib.resources as r
+import shutil
+pkg = r.files('homeassistant_streamdeck').joinpath('config.yaml')
+shutil.copy(str(pkg), './config.yaml')
+print('Copied packaged config to ./config.yaml')
+PY
+```
+
+You can then edit `./config.yaml` and run `hass-streamdeck --config ./config.yaml`.
+
 ## Dependencies:
 
 ### Python

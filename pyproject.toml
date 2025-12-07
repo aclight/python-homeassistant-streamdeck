@@ -29,3 +29,6 @@ where = ["src"]
 
 [project.scripts]
 hass-streamdeck = "homeassistant_streamdeck.cli:run"
+
+[project.optional-dependencies]
+dev = ["pytest>=7.0.0"]
