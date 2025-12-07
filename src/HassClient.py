@@ -14,7 +14,9 @@ import StreamDeck.DeviceManager as StreamDeck
 import logging
 import asyncio
 import yaml
+import signal
 
+logging.basicConfig(level=logging.DEBUG)
 
 class Config(object):
     def __init__(self, filename):
@@ -43,7 +45,7 @@ class Config(object):
 
 
 class ScreenSaver:
-    def __init__(self, loop, deck):
+    def __init__(self, deck):
         self.deck = deck
 
         deck.set_key_callback_async(self._handle_button_press)
@@ -53,7 +55,8 @@ class ScreenSaver:
         self.callback = callback
         self.timeout = timeout
 
-        loop.create_task(self._loop())
+        # schedule the screensaver loop on the currently running event loop
+        asyncio.create_task(self._loop())
 
     async def _loop(self):
         await self._set_on()
@@ -88,7 +91,8 @@ class ScreenSaver:
                 await self._set_on()
 
 
-async def main(loop, config):
+async def main(config):
+  
     conf_deck_brightness = config.get('streamdeck/brightness', 20)
     conf_deck_screensaver = config.get('streamdeck/screensaver', 0)
     conf_hass_host = config.get('home_assistant/host', 'localhost')
@@ -154,32 +158,71 @@ async def main(loop, config):
     async def steamdeck_key_state_changed(deck, key, state):
         await tile_manager.button_state_changed(key, state)
 
+    # enable loop-level debug settings if requested in config
+    if config.get('debug'):
+        logging.info('Debug enabled')
+        loop = asyncio.get_running_loop()
+        loop.set_debug(True)
+        loop.slow_callback_duration = 0.15
+
     logging.info("Connecting to %s:%s...", conf_hass_host, conf_hass_port)
-    await hass.connect(api_password=conf_hass_pw, api_token=conf_hass_token)
+    try:
+        await hass.connect(api_password=conf_hass_pw, api_token=conf_hass_token)
+    except Exception:
+        logging.exception("Failed to connect to Home Assistant")
+        return
 
     deck.open()
-    deck.reset()
+    logging.info("Opening StreamDeck device and resetting device")
+    try:
+        deck.reset()
+    except Exception:
+        logging.exception("Failed to reset StreamDeck")
 
-    screensaver = ScreenSaver(loop=loop, deck=deck)
+    try:
+        # Ensure the device is awake and at a visible brightness (do this after reset)
+        deck.set_brightness(conf_deck_brightness)
+    except Exception:
+        logging.exception("Failed to set initial StreamDeck brightness")
+
+    screensaver = ScreenSaver(deck=deck)
     await screensaver.start(brightness=conf_deck_brightness, callback=steamdeck_key_state_changed, timeout=conf_deck_screensaver)
 
     await tile_manager.set_deck_page(None)
     await hass.subscribe_to_event('state_changed', hass_state_changed)
 
-    return True
+    # keep running until a termination signal; background tasks (receiver, callbacks) run on the event loop
+    stop_event = asyncio.Event()
+
+    loop = asyncio.get_running_loop()
+    for s in (signal.SIGINT, signal.SIGTERM):
+        try:
+            loop.add_signal_handler(s, stop_event.set)
+        except NotImplementedError:
+            # add_signal_handler may not be implemented on some platforms
+            pass
+
+    try:
+        await stop_event.wait()
+    finally:
+        logging.info("Shutting down...")
+        try:
+            await hass.close()
+        except Exception:
+            logging.exception("Error closing Home Assistant connection")
+
+        try:
+            # Close the StreamDeck device cleanly if possible
+            deck.close()
+        except Exception:
+            logging.exception("Error closing StreamDeck")
 
 
 if __name__ == '__main__':
     logging.basicConfig(level=logging.INFO)
 
-    loop = asyncio.get_event_loop()
-
     config = Config('config.yaml')
-    if config.get('debug'):
-        logging.info('Debug enabled')
-        loop.set_debug(True)
-        loop.slow_callback_duration = 0.15
 
-    init_ok = loop.run_until_complete(main(loop, config))
-    if init_ok:
-        loop.run_forever()
+    # Run main inside a managed event loop. main() will not return (it waits forever),
+    # so control stays inside asyncio.run and background tasks remain active.
+    asyncio.run(main(config))
