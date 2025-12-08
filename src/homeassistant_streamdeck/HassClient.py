@@ -15,11 +15,22 @@ import logging
 import asyncio
 import yaml
 import signal
+import os
+from pathlib import Path
 
 logging.basicConfig(level=logging.DEBUG)
 
 class Config(object):
+    # Sensitive keys that can be overridden by environment variables
+    SENSITIVE_KEYS = {
+        'home_assistant/api_password': 'HASS_API_PASSWORD',
+        'home_assistant/api_token': 'HASS_API_TOKEN',
+    }
+
     def __init__(self, filename):
+        # Try to load .env file for environment variables (optional dependency)
+        self._load_dotenv()
+
         try:
             logging.info('Reading config file "{}"...'.format(filename))
 
@@ -30,7 +41,31 @@ class Config(object):
 
             self.config = {}
 
+    def _load_dotenv(self):
+        """Load environment variables from .env file if python-dotenv is available."""
+        try:
+            from dotenv import load_dotenv
+            # Look for .env in current working directory
+            env_path = Path.cwd() / '.env'
+            if env_path.exists():
+                logging.debug('Loading environment variables from {}'.format(env_path))
+                load_dotenv(env_path)
+            else:
+                logging.debug('No .env file found at {}'.format(env_path))
+        except ImportError:
+            logging.debug('python-dotenv not installed; skipping .env file loading')
+        except Exception as e:
+            logging.warning('Error loading .env file: {}'.format(e))
+
     def get(self, path, default=None):
+        # Check if this is a sensitive key and look for environment variable override
+        if path in self.SENSITIVE_KEYS:
+            env_var = self.SENSITIVE_KEYS[path]
+            env_value = os.environ.get(env_var)
+            if env_value is not None:
+                logging.debug('Using environment variable {} for config key "{}"'.format(env_var, path))
+                return env_value
+
         value = default
 
         location = self.config

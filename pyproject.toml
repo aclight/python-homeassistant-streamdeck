@@ -20,7 +20,6 @@ where = ["src"]
 
 [tool.setuptools.package-data]
 "homeassistant_streamdeck" = [
-    "config.yaml",
     "Assets/*",
     "Assets/**",
     "Assets/Fonts/*",
@@ -32,3 +31,4 @@ hass-streamdeck = "homeassistant_streamdeck.cli:run"
 
 [project.optional-dependencies]
 dev = ["pytest>=7.0.0"]
+env = ["python-dotenv>=1.0.0"]

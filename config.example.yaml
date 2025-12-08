@@ -19,12 +19,16 @@ home_assistant:
   # Legacy password to use to connect to the HomeAssistant server. Newer
   # versions of HomeAssistant have deprecated this in favour of long-lived
   # access tokens.
+  # IMPORTANT: For security, use environment variable HASS_API_PASSWORD instead
+  # of hardcoding here. If environment variable is set, it overrides this value.
   api_password: ~
 
   # Long lived access token to use to connect to the HomeAssistant server. See
   # the Authentication section of the HomeAssistant documentation on how to
   # create of these for your server.
-  api_token: eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpc3MiOiI5ODIwNTRlN2NjOWI0ZTFkOTM2NWRjMTdjZjk3MDg0MyIsImlhdCI6MTU0MDcyMDI0OSwiZXhwIjoxODU2MDgwMjQ5fQ.LVZkReSK2vKliQWL6j0JaAKC6M877J_Ybeotzt0j8f8
+  # IMPORTANT: For security, use environment variable HASS_API_TOKEN instead
+  # of hardcoding here. If environment variable is set, it overrides this value.
+  api_token: ~
 
 #################################################
 ###     StreamDeck Configuration Settings     ###

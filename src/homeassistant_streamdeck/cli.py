@@ -7,10 +7,8 @@ while exposing an installed console script entry point.
 
 import argparse
 import asyncio
-import importlib.resources as pkg_resources
-import tempfile
 import os
-import logging
+import sys
 
 # Import the Config class and main coroutine from the original script so we
 # avoid duplicating logic here. This expects `HassClient.py` to be importable
@@ -19,6 +17,15 @@ from .HassClient import Config, main as hass_main
 
 
 def _find_config_path(explicit_path=None):
+    """Find and validate config file path.
+    
+    Search order:
+    1. Explicit path via --config argument
+    2. config.yaml in current working directory
+    
+    Raises:
+        FileNotFoundError: If config file cannot be found
+    """
     if explicit_path:
         if os.path.exists(explicit_path):
             return explicit_path
@@ -29,15 +36,13 @@ def _find_config_path(explicit_path=None):
     if os.path.exists(cwd_path):
         return cwd_path
 
-    # Fallback to packaged config
-    try:
-        data = pkg_resources.files('homeassistant_streamdeck').joinpath('config.yaml').read_text(encoding='utf-8')
-        tmp = tempfile.NamedTemporaryFile(delete=False, suffix='.yaml')
-        tmp.write(data.encode('utf-8'))
-        tmp.close()
-        return tmp.name
-    except Exception:
-        raise FileNotFoundError('No config.yaml found in CWD and packaged config is unavailable')
+    # No config found
+    raise FileNotFoundError(
+        "No config.yaml found.\n\n"
+        "Please create a config.yaml file in your current directory, or provide\n"
+        "the path using: hass-streamdeck --config /path/to/config.yaml\n\n"
+        "See config.example.yaml for a complete example configuration."
+    )
 
 
 def run():
@@ -48,20 +53,11 @@ def run():
     try:
         config_path = _find_config_path(args.config)
     except FileNotFoundError as exc:
-        logging.error(str(exc))
-        return 2
+        print(str(exc), file=sys.stderr)
+        sys.exit(1)
 
     config = Config(config_path)
-
-    try:
-        asyncio.run(hass_main(config))
-    finally:
-        # If we created a temp file, try to remove it
-        if args.config is None and config_path and config_path.startswith(tempfile.gettempdir()):
-            try:
-                os.unlink(config_path)
-            except Exception:
-                pass
+    asyncio.run(hass_main(config))
 
 
 if __name__ == '__main__':

@@ -8,12 +8,6 @@ def test_package_root_importable():
     assert package_root is not None
 
 
-def test_config_exists():
-    package_root = resources.files('homeassistant_streamdeck')
-    cfg = package_root.joinpath('config.yaml')
-    assert cfg.exists(), 'config.yaml should be present in package resources'
-
-
 def test_assets_present():
     package_root = resources.files('homeassistant_streamdeck')
     assets = package_root.joinpath('Assets')

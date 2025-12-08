@@ -83,6 +83,104 @@ If you install via `pip`, use `hass-streamdeck --config /path/to/config.yaml`
 to point to your configuration file; running the script from the cloned
 repository using the `src/config.yaml` will behave the same as before.
 
+### Handling Sensitive Configuration
+
+API tokens and passwords should **never** be committed to version control. This project supports three approaches:
+
+**Recommended: `.env` File (easiest for local development)**
+
+1. Copy `.env.example` to `.env`:
+```bash
+cp .env.example .env
+```
+
+2. Edit `.env` and add your API token:
+```bash
+HASS_API_TOKEN=your-long-lived-token-here
+```
+
+3. Run the script (the `.env` file will be automatically loaded):
+```bash
+python -m pip install .[env]  # Install optional dotenv support
+hass-streamdeck --config ./config.yaml
+```
+
+The `.env` file is already in `.gitignore`, so it won't be committed to version control.
+
+**Alternative: Direct Environment Variables**
+
+Set sensitive values as environment variables before running the script:
+
+```bash
+export HASS_API_TOKEN="your-long-lived-token-here"
+hass-streamdeck --config ./config.yaml
+```
+
+**Alternative: Separate Config Files**
+
+1. Copy `config.example.yaml` to `config.yaml`:
+```bash
+cp config.example.yaml config.yaml
+```
+
+2. Edit `config.yaml` to set your host, brightness, screens, and tiles.
+
+3. Add `config.yaml` to `.gitignore` so it's never committed:
+```bash
+echo "config.yaml" >> .gitignore
+```
+
+4. Set API credentials via `.env` file (recommended) or environment variables.
+
+## Installation & Setup
+
+**From PyPI (when published):**
+```bash
+pip install homeassistant-streamdeck
+cp config.example.yaml config.yaml
+cp .env.example .env
+# Edit config.yaml and .env with your settings
+hass-streamdeck --config ./config.yaml
+```
+
+**From source (development):**
+```bash
+git clone https://github.com/aclight/python-homeassistant-streamdeck.git
+cd python-homeassistant-streamdeck
+pip install -e .[env]
+cp config.example.yaml config.yaml
+cp .env.example .env
+# Edit config.yaml and .env with your settings
+hass-streamdeck --config ./config.yaml
+```
+
+## Environment Variables
+
+The following environment variables are supported and will override values in `config.yaml`:
+
+| Variable | Purpose | Example |
+|----------|---------|---------|
+| `HASS_API_TOKEN` | Long-lived Home Assistant access token (recommended) | `eyJ0eXAiOiJKV1Q...` |
+| `HASS_API_PASSWORD` | Home Assistant API password (deprecated) | `mypassword` |
+
+These can be set in a `.env` file (copy from `.env.example`) or exported directly in your shell.
+
+**Alternative: Separate Config Files**
+
+1. Copy `config.example.yaml` to `config.yaml`:
+```bash
+cp config.example.yaml config.yaml
+```
+
+2. Edit `config.yaml` to set your host, brightness, screens, and tiles.
+
+3. Add `config.yaml` to `.gitignore` so it's never committed:
+```bash
+echo "config.yaml" >> .gitignore
+```
+
+4. Set API credentials via `.env` file (recommended) or environment variables.
+
 ## Running Tests
 
 
