@@ -99,13 +99,24 @@ cp .env.example .env
 HASS_API_TOKEN=your-long-lived-token-here
 ```
 
-3. Run the script (the `.env` file will be automatically loaded):
+3. Install optional dotenv support and run the CLI (the `.env` file will be
+	automatically loaded when `python-dotenv` is available):
+
 ```bash
-python -m pip install .[env]  # Install optional dotenv support
+# Install optional support via the package extras
+python -m pip install .[env]
+# or install python-dotenv directly
+pip install python-dotenv
+
+# Run the CLI pointing to your config
 hass-streamdeck --config ./config.yaml
 ```
 
-The `.env` file is already in `.gitignore`, so it won't be committed to version control.
+4. Keep `.env` out of version control. If needed, add it to `.gitignore`:
+
+```bash
+echo ".env" >> .gitignore
+```
 
 **Alternative: Direct Environment Variables**
 
@@ -193,26 +204,45 @@ python -m pytest
 ```
 
 The tests are located under `tests/` and include checks that the packaged
-resources (config and assets) are present and that the CLI fallback copies the
-packaged `config.yaml` to a temporary file when no local `config.yaml` exists.
+assets are present and that the `Config` and CLI code correctly load a
+provided `config.yaml` (from the working directory or an explicit path).
+There is no packaged `config.yaml` fallback; you should use
+`config.example.yaml` as the canonical example when creating your own
+configuration.
 
-## Getting the Packaged `config.yaml`
+## Getting an example `config.yaml`
 
-If you've installed the package and want a copy of the canonical `config.yaml`
-to edit, you can copy it out of the installed package into your working
-directory. One simple way to do this is:
+This package intentionally does not include a packaged `config.yaml` fallback.
+Use the example configuration `config.example.yaml` as the canonical starting
+point instead.
+
+- If you are working from a cloned copy of the repository, copy the example:
 
 ```bash
-python - <<'PY'
-import importlib.resources as r
-import shutil
-pkg = r.files('homeassistant_streamdeck').joinpath('config.yaml')
-shutil.copy(str(pkg), './config.yaml')
-print('Copied packaged config to ./config.yaml')
-PY
+cp config.example.yaml config.yaml
 ```
 
-You can then edit `./config.yaml` and run `hass-streamdeck --config ./config.yaml`.
+- If you installed the package from PyPI (or don't have a local checkout),
+	download the example directly from the repository:
+
+```bash
+curl -sS -o config.yaml \
+	https://raw.githubusercontent.com/aclight/python-homeassistant-streamdeck/master/config.example.yaml
+# or
+wget -q -O config.yaml \
+	https://raw.githubusercontent.com/aclight/python-homeassistant-streamdeck/master/config.example.yaml
+```
+
+Edit `config.yaml` with your Home Assistant and Stream Deck settings, then
+run the CLI with the file explicitly:
+
+```bash
+hass-streamdeck --config ./config.yaml
+```
+
+Note: the package still includes the `Assets/` directory (fonts and images),
+so asset paths such as `Assets/Fonts/Roboto-Bold.ttf` and
+`Assets/Images/light_on.png` will work when the package is installed.
 
 ## Dependencies:
 
