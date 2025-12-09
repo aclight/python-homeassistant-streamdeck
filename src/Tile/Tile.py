@@ -75,7 +75,11 @@ class HassTile(BaseTile):
                 domain = action[0]
                 service = action[1]
 
-            await self.hass.set_state(domain=domain, service=service, entity_id=self.tile_info['entity_id'])
+            data = None
+            if self.tile_info.get('data') is not None:
+                data = self.tile_info.get('data')
+
+            await self.hass.set_state(domain=domain, service=service, entity_id=self.tile_info['entity_id'], data=data)
 
 
 class PageTile(BaseTile):

@@ -125,10 +125,13 @@ class HomeAssistantWS(object):
         response = await self._send_message(message)
         return response
 
-    async def set_state(self, domain, service, entity_id):
+    async def set_state(self, domain, service, entity_id, data):
         message = {'type': 'call_service', 'domain': domain, 'service': service}
         if entity_id is not None:
             message['service_data'] = {'entity_id': entity_id}
+            if data is not None:
+                # Merge additional data into service_data
+                message['service_data'].update(data)
 
         response = await self._send_message(message)
         return response
