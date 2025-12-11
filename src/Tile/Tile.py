@@ -68,6 +68,7 @@ class BaseTile(object):
         image_tile.value = state_tile.get('value', '').format_map(format_dict)
         image_tile.value_font = state_tile.get('value_font')
         image_tile.value_size = state_tile.get('value_size')
+        image_tile.border = state_tile.get('border', '').format_map(format_dict)
 
         return image_tile
 

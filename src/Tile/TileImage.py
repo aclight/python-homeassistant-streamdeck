@@ -27,6 +27,7 @@ class TileImage(object):
         self.value = None
         self.value_font = None
         self.value_size = None
+        self.border = None
 
     @property
     def color(self):
@@ -101,6 +102,15 @@ class TileImage(object):
         self._value_size = size
         self._pixels = None
 
+    @property
+    def border(self):
+        return self._border
+
+    @border.setter
+    def border(self, border):
+        self._border = border
+        self._pixels = None
+
     def _draw_overlay(self, image, pos, max_size):
         if self._overlay is None:
             return
@@ -121,6 +131,208 @@ class TileImage(object):
         overlay_y = pos[1] + int((max_size[1] - overlay_h) / 2)
 
         image.paste(overlay_image, (overlay_x, overlay_y), overlay_image)
+
+    def _parse_border(self, border_spec):
+        """Parse a CSS-like border specification: 'thickness style color'
+        
+        Examples:
+        - '5px solid red'
+        - '2px dashed #FF0000'
+        - '3px dotted blue'
+        
+        Returns:
+            tuple: (thickness_px, style, color_tuple) or (None, None, None) if invalid
+        """
+        if border_spec is None or border_spec == '':
+            return (None, None, None)
+
+        parts = border_spec.strip().split()
+        if len(parts) < 3:
+            return (None, None, None)
+
+        try:
+            # Parse thickness (remove 'px' suffix)
+            thickness_str = parts[0].rstrip('px')
+            thickness = int(thickness_str)
+
+            # Parse style
+            style = parts[1].lower()
+            if style not in ['solid', 'dashed', 'dotted']:
+                return (None, None, None)
+
+            # Parse color
+            color_name = parts[2].lower()
+            color = self._parse_color(color_name)
+            if color is None:
+                return (None, None, None)
+
+            return (thickness, style, color)
+        except (ValueError, IndexError):
+            return (None, None, None)
+
+    def _parse_color(self, color_spec):
+        """Parse a color specification.
+        
+        Supports:
+        - Standard color names (red, green, blue, black, white, etc.)
+        - Hex RGB values (#FF0000, #0F0, etc.)
+        
+        Returns:
+            tuple: (R, G, B) or None if invalid
+        """
+        # Hex color
+        if color_spec.startswith('#'):
+            try:
+                hex_str = color_spec.lstrip('#')
+                if len(hex_str) == 6:
+                    r = int(hex_str[0:2], 16)
+                    g = int(hex_str[2:4], 16)
+                    b = int(hex_str[4:6], 16)
+                    return (r, g, b)
+                elif len(hex_str) == 3:
+                    # Short form like #F0A
+                    r = int(hex_str[0] * 2, 16)
+                    g = int(hex_str[1] * 2, 16)
+                    b = int(hex_str[2] * 2, 16)
+                    return (r, g, b)
+            except ValueError:
+                pass
+        
+        # Named colors
+        color_map = {
+            'red': (255, 0, 0),
+            'green': (0, 128, 0),
+            'blue': (0, 0, 255),
+            'black': (0, 0, 0),
+            'white': (255, 255, 255),
+            'yellow': (255, 255, 0),
+            'cyan': (0, 255, 255),
+            'magenta': (255, 0, 255),
+            'gray': (128, 128, 128),
+            'grey': (128, 128, 128),
+            'orange': (255, 165, 0),
+            'purple': (128, 0, 128),
+            'pink': (255, 192, 203),
+            'brown': (165, 42, 42),
+        }
+        
+        return color_map.get(color_spec)
+
+    def _draw_border(self, image):
+        """Draw a rounded rectangle border on the image.
+        
+        The border is drawn on top of existing content but will be covered by labels/values.
+        """
+        if self._border is None:
+            return
+
+        thickness, style, color = self._parse_border(self._border)
+        if thickness is None or style is None or color is None:
+            return
+
+        d = ImageDraw.Draw(image)
+        
+        # Define the bounding box with a small fixed margin to keep border inside image
+        margin = 1
+        bbox = [margin, margin, image.width - margin, image.height - margin + 1]
+        
+        # Draw based on style
+        if style == 'solid':
+            d.rounded_rectangle(bbox, radius=10, outline=color, width=thickness)
+        elif style == 'dashed':
+            self._draw_dashed_rounded_rectangle(d, bbox, color, thickness, radius=10)
+        elif style == 'dotted':
+            self._draw_dotted_rounded_rectangle(d, bbox, color, thickness, radius=10)
+
+    def _draw_dashed_rounded_rectangle(self, draw, bbox, color, width, radius=10):
+        """Draw a dashed rounded rectangle."""
+        x0, y0, x1, y1 = bbox
+        
+        # Draw rounded corners and edges with dashes
+        dash_length = 4
+        gap_length = 2
+        
+        # Top edge
+        x = x0 + radius
+        while x < x1 - radius:
+            draw.line([(x, y0), (min(x + dash_length, x1 - radius), y0)], fill=color, width=width)
+            x += dash_length + gap_length
+        
+        # Bottom edge
+        x = x0 + radius
+        while x < x1 - radius:
+            draw.line([(x, y1), (min(x + dash_length, x1 - radius), y1)], fill=color, width=width)
+            x += dash_length + gap_length
+        
+        # Left edge
+        y = y0 + radius
+        while y < y1 - radius:
+            draw.line([(x0, y), (x0, min(y + dash_length, y1 - radius))], fill=color, width=width)
+            y += dash_length + gap_length
+        
+        # Right edge
+        y = y0 + radius
+        while y < y1 - radius:
+            draw.line([(x1, y), (x1, min(y + dash_length, y1 - radius))], fill=color, width=width)
+            y += dash_length + gap_length
+        
+        # Draw corner arcs
+        corner_bbox = (x0, y0, x0 + radius * 2, y0 + radius * 2)
+        draw.arc(corner_bbox, 180, 270, fill=color, width=width)
+        
+        corner_bbox = (x1 - radius * 2, y0, x1, y0 + radius * 2)
+        draw.arc(corner_bbox, 270, 0, fill=color, width=width)
+        
+        corner_bbox = (x1 - radius * 2, y1 - radius * 2, x1, y1)
+        draw.arc(corner_bbox, 0, 90, fill=color, width=width)
+        
+        corner_bbox = (x0, y1 - radius * 2, x0 + radius * 2, y1)
+        draw.arc(corner_bbox, 90, 180, fill=color, width=width)
+
+    def _draw_dotted_rounded_rectangle(self, draw, bbox, color, width, radius=10):
+        """Draw a dotted rounded rectangle."""
+        x0, y0, x1, y1 = bbox
+        
+        # Draw rounded corners and edges with dots
+        dot_spacing = 3
+        dot_size = 1
+        
+        # Top edge
+        x = x0 + radius
+        while x < x1 - radius:
+            draw.ellipse([x, y0, x + dot_size, y0 + dot_size], fill=color)
+            x += dot_spacing
+        
+        # Bottom edge
+        x = x0 + radius
+        while x < x1 - radius:
+            draw.ellipse([x, y1, x + dot_size, y1 + dot_size], fill=color)
+            x += dot_spacing
+        
+        # Left edge
+        y = y0 + radius
+        while y < y1 - radius:
+            draw.ellipse([x0, y, x0 + dot_size, y + dot_size], fill=color)
+            y += dot_spacing
+        
+        # Right edge
+        y = y0 + radius
+        while y < y1 - radius:
+            draw.ellipse([x1, y, x1 + dot_size, y + dot_size], fill=color)
+            y += dot_spacing
+        
+        # Draw corner arcs
+        corner_bbox = (x0, y0, x0 + radius * 2, y0 + radius * 2)
+        draw.arc(corner_bbox, 180, 270, fill=color, width=width)
+        
+        corner_bbox = (x1 - radius * 2, y0, x1, y0 + radius * 2)
+        draw.arc(corner_bbox, 270, 0, fill=color, width=width)
+        
+        corner_bbox = (x1 - radius * 2, y1 - radius * 2, x1, y1)
+        draw.arc(corner_bbox, 0, 90, fill=color, width=width)
+        
+        corner_bbox = (x0, y1 - radius * 2, x0 + radius * 2, y1)
+        draw.arc(corner_bbox, 90, 180, fill=color, width=width)
 
     def _draw_label(self, image):
         if self._label is None:
@@ -206,6 +418,32 @@ class TileImage(object):
             overlay_pos = (int(o_x), int(o_y))
             overlay_size = (int(o_w), int(o_h))
             self._draw_overlay(image, overlay_pos, overlay_size)
+            
+            # Draw border after overlay but before labels/values are drawn
+            self._draw_border(image)
+            
+            # Redraw label and value on top of the border
+            if self._label is not None:
+                try:
+                    label_font_path = (self._label_font or 'Assets/Fonts/Roboto-Bold.ttf')
+                    resolved_label_font = self._resolve_asset_path(label_font_path)
+                    font = ImageFont.truetype(resolved_label_font, self._label_size or 12)
+                    d = ImageDraw.Draw(image)
+                    pos = ((image.width - (l_w or 0)) / 2, l_y or 0)
+                    d.text(pos, self._label, font=font, fill=(255, 255, 255, 128))
+                except OSError:
+                    pass
+            
+            if self._value is not None:
+                try:
+                    value_font_path = (self._value_font or 'Assets/Fonts/Roboto-Light.ttf')
+                    resolved_value_font = self._resolve_asset_path(value_font_path)
+                    font = ImageFont.truetype(resolved_value_font, self._value_size or 18)
+                    d = ImageDraw.Draw(image)
+                    pos = ((image.width - (v_w or 0)) / 2, (v_y or image.height) - (v_h or 0))
+                    d.text(pos, self._value, font=font, fill=(255, 255, 255, 128))
+                except OSError:
+                    pass
 
             self._pixels = PILHelper.to_native_format(self._deck, image)
 
