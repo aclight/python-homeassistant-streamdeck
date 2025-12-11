@@ -33,9 +33,31 @@ class BaseTile(object):
         if self.tile_class is None:
             return self.image_tile
 
-        state_tile = self.tile_class['states'].get(state) or self.tile_class['states'].get(None) or {}
-
         format_dict = {'state': state, **self.tile_info}
+
+        # Look up the state configuration, trying template variable substitution
+        state_tile = None
+        
+        # First try exact match
+        state_tile = self.tile_class['states'].get(state)
+        
+        # If no exact match, try matching against template variables
+        if state_tile is None:
+            for state_key, state_config in self.tile_class['states'].items():
+                if state_key is not None:
+                    # Apply template substitution to the state key and check if it matches
+                    try:
+                        substituted_key = str(state_key).format_map(format_dict)
+                        if substituted_key == state:
+                            state_tile = state_config
+                            break
+                    except (KeyError, ValueError):
+                        # If format_map fails, just continue
+                        continue
+        
+        # Fall back to None state if no match found
+        if state_tile is None:
+            state_tile = self.tile_class['states'].get(None) or {}
 
         image_tile = self.image_tile
         image_tile.color = state_tile.get('color')
