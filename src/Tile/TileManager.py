@@ -11,12 +11,13 @@ from concurrent.futures import ThreadPoolExecutor
 
 
 class TileManager(object):
-    def __init__(self, deck, pages):
+    def __init__(self, deck, pages, base_path=None):
         self.deck = deck
         self.key_layout = deck.key_layout()
         self.pages = pages
+        self.base_path = base_path
         self.current_page = None
-        self.empty_tile = BaseTile(deck)
+        self.empty_tile = BaseTile(deck, base_path=base_path)
         self.current_page = pages.get('home')
 
         if self.current_page is None:

@@ -6,16 +6,16 @@
 #
 
 from .TileImage import TileImage
-
+import logging
 
 class BaseTile(object):
-    def __init__(self, deck, hass=None, tile_class=None, tile_info=None):
+    def __init__(self, deck, hass=None, tile_class=None, tile_info=None, base_path=None):
         self.deck = deck
         self.hass = hass
         self.tile_class = tile_class
         self.tile_info = tile_info
 
-        self.image_tile = TileImage(deck)
+        self.image_tile = TileImage(deck, base_path=base_path)
         self.old_state = None
 
     @property
@@ -39,7 +39,7 @@ class BaseTile(object):
 
         image_tile = self.image_tile
         image_tile.color = state_tile.get('color')
-        image_tile.overlay = state_tile.get('overlay')
+        image_tile.overlay = state_tile.get('overlay', '').format_map(format_dict)
         image_tile.label = state_tile.get('label', '').format_map(format_dict)
         image_tile.label_font = state_tile.get('label_font')
         image_tile.label_size = state_tile.get('label_size')
@@ -54,8 +54,8 @@ class BaseTile(object):
 
 
 class HassTile(BaseTile):
-    def __init__(self, deck, hass, tile_class, tile_info):
-        super().__init__(deck, hass, tile_class, tile_info)
+    def __init__(self, deck, hass, tile_class, tile_info, base_path=None):
+        super().__init__(deck, hass, tile_class, tile_info, base_path=base_path)
 
     @property
     async def state(self):
@@ -83,8 +83,8 @@ class HassTile(BaseTile):
 
 
 class PageTile(BaseTile):
-    def __init__(self, deck, hass, tile_class, tile_info):
-        super().__init__(deck, hass, tile_class, tile_info)
+    def __init__(self, deck, hass, tile_class, tile_info, base_path=None):
+        super().__init__(deck, hass, tile_class, tile_info, base_path=base_path)
 
     async def button_state_changed(self, tile_manager, state):
         if not state:

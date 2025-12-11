@@ -13,10 +13,11 @@ from pathlib import Path
 
 
 class TileImage(object):
-    def __init__(self, deck):
+    def __init__(self, deck, base_path=None):
         self._pixels = None
         self._overlay_image = None
         self._deck = deck
+        self._base_path = base_path
 
         self.color = (0, 0, 0)
         self.overlay = None
@@ -213,9 +214,13 @@ class TileImage(object):
     def _resolve_asset_path(self, path):
         """Resolve an asset path.
 
-        If `path` exists as given, return it. Otherwise, attempt to find the
-        file inside the installed `homeassistant_streamdeck` package (so assets
-        packaged inside the distribution are used).
+        Resolution order:
+        1. If `path` exists as given (absolute or relative to cwd), return it
+        2. If base_path is set, try relative to base_path (config directory)
+        3. Try to find the file inside the installed `homeassistant_streamdeck` package
+        
+        This allows users to reference assets relative to their config file location,
+        such as "Assets/Images/overlay.png" or custom paths like "thumbnails/000.png".
         """
         if path is None:
             raise FileNotFoundError(path)
@@ -223,6 +228,14 @@ class TileImage(object):
         # If the path is already a Path-like that exists, return it
         if os.path.exists(path):
             return path
+
+        # If base_path is set, try resolving relative to the config directory
+        # This allows users to reference paths like "Assets/Images/overlay.png"
+        # relative to where their config.yaml is located
+        if self._base_path is not None:
+            candidate = os.path.join(self._base_path, path)
+            if os.path.exists(candidate):
+                return candidate
 
         # Try to resolve relative to the package root
         try:

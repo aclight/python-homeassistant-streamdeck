@@ -31,6 +31,9 @@ class Config(object):
         # Try to load .env file for environment variables (optional dependency)
         self._load_dotenv()
 
+        self.filename = filename
+        self.config_dir = os.path.dirname(os.path.abspath(filename))
+
         try:
             logging.info('Reading config file "{}"...'.format(filename))
 
@@ -181,11 +184,11 @@ async def main(config):
 
             conf_tile_class_info = tiles.get(conf_screen_tile_type)
 
-            page_tiles[tuple(conf_screen_tile_pos)] = conf_tile_class_info['class'](deck=deck, hass=hass, tile_class=conf_tile_class_info, tile_info=conf_screen_tile)
+            page_tiles[tuple(conf_screen_tile_pos)] = conf_tile_class_info['class'](deck=deck, hass=hass, tile_class=conf_tile_class_info, tile_info=conf_screen_tile, base_path=config.config_dir)
 
         pages[conf_screen_name] = page_tiles
 
-    tile_manager = TileManager(deck, pages)
+    tile_manager = TileManager(deck, pages, base_path=config.config_dir)
 
     async def hass_state_changed(data):
         await tile_manager.update_page(force_redraw=False)
