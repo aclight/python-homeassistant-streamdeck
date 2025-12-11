@@ -12,6 +12,8 @@ dependencies = [
     "Pillow>=8.0.0",
     "PyYAML>=5.3.1",
     "aiohttp>=3.7.3",
+    "tabler-icons>=0.0.2",
+    "cairosvg>=2.5.0",
 ]
 requires-python = ">=3.8"
 

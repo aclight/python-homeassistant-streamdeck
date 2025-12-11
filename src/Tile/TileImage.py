@@ -10,6 +10,10 @@ from StreamDeck.ImageHelpers import PILHelper
 import os
 import importlib.resources as pkg_resources
 from pathlib import Path
+import logging
+import cairosvg
+import tabler_icons
+import io
 
 
 class TileImage(object):
@@ -28,6 +32,7 @@ class TileImage(object):
         self.value_font = None
         self.value_size = None
         self.border = None
+        self.icons = None
 
     @property
     def color(self):
@@ -48,7 +53,7 @@ class TileImage(object):
     @property
     def label_size(self):
         return self._label_size
-
+    
     @property
     def value(self):
         return self._value
@@ -56,7 +61,7 @@ class TileImage(object):
     @property
     def value_font(self):
         return self._value_font
-
+        
     @property
     def value_size(self):
         return self._value_size
@@ -111,8 +116,17 @@ class TileImage(object):
         self._border = border
         self._pixels = None
 
+    @property
+    def icons(self):
+        return self._icons
+
+    @icons.setter
+    def icons(self, icons):
+        self._icons = icons
+        self._pixels = None
+
     def _draw_overlay(self, image, pos, max_size):
-        if self._overlay is None:
+        if self._overlay is None or self._overlay == '':
             return
 
         max_size = min(image.size, max_size)
@@ -121,6 +135,12 @@ class TileImage(object):
 
         if self._overlay_image is None:
             overlay_path = self._resolve_asset_path(self._overlay)
+            # Skip if the overlay path is just a directory (happens when path is invalid)
+            if os.path.isdir(overlay_path):
+                return
+            # Skip if the overlay file doesn't exist
+            if not os.path.isfile(overlay_path):
+                return
             self._overlay_image = Image.open(overlay_path).convert("RGBA")
 
         overlay_image = self._overlay_image.copy()
@@ -131,6 +151,97 @@ class TileImage(object):
         overlay_y = pos[1] + int((max_size[1] - overlay_h) / 2)
 
         image.paste(overlay_image, (overlay_x, overlay_y), overlay_image)
+
+    def _draw_icons(self, image):
+        """Draw one or more tabler icons on the image.
+        
+        Icons are drawn on top of the overlay but under border/label/value.
+        """
+        if self.icons is None or self.icons == '':
+            return
+
+        # Normalize icons to a list
+        icons_list = []
+        if isinstance(self._icons, str):
+            # Single icon specification
+            icons_list = [self._icons]
+        elif isinstance(self._icons, list):
+            icons_list = self._icons
+        else:
+            return
+
+        for icon_spec in icons_list:
+            self._draw_single_icon(image, icon_spec)
+
+    def _draw_single_icon(self, image, icon_spec):
+        """Draw a single tabler icon.
+        
+        Icon spec format: "icon_name [size=N] [color=hex|name] [x=N] [y=N] [stroke=N]"
+        Example: "heart size=32 color=red x=10 y=10 stroke=2"
+        """
+        # Parse icon specification
+        parts = icon_spec.strip().split()
+        if not parts:
+            return
+
+        icon_name = parts[0]
+        params = {}
+
+        # Parse parameters
+        for part in parts[1:]:
+            if '=' in part:
+                key, value = part.split('=', 1)
+                params[key.lower()] = value.lower()
+
+        # Get icon defaults
+        size = int(params.get('size', image.width))
+        color = self._parse_color(params.get('color', 'white'))
+        stroke = int(params.get('stroke', 2))
+        x = int(params.get('x', (image.width - size) // 2))
+        y = int(params.get('y', (image.height - size) // 2))
+
+        if color is None:
+            color = (255, 255, 255)
+
+        try:
+            # Get the icon SVG
+            icon_svg = tabler_icons.get_icon(icon_name)
+            if icon_svg is None:
+                logging.warning(f"Icon '{icon_name}' not found in tabler_icons")
+                return
+
+            icon_image = self._render_icon_svg(icon_svg, size, color, stroke)
+            if icon_image is None:
+                return
+
+            # Draw the icon on the image
+            image.paste(icon_image, (x, y), icon_image)
+
+        except Exception as e:
+            # Log the error instead of silently failing
+            logging.error(f"Error drawing icon '{icon_name}': {e}", exc_info=True)
+
+    def _render_icon_svg(self, svg_string, size, color, stroke):
+        """Render a tabler icon SVG to a PIL Image using cairosvg."""
+        # Convert markupsafe.Markup to string if needed
+        svg_str = str(svg_string)
+        
+        # Clean up the SVG: remove line breaks and extra whitespace
+        # The tabler_icons SVG has formatting that breaks XML parsing
+        svg_str = ' '.join(svg_str.split())
+
+        # Modify SVG to use the desired color and stroke
+        svg_modified = svg_str.replace('stroke="currentColor"', f'stroke="rgb{color}"')
+        svg_modified = svg_modified.replace('stroke-width="2"', f'stroke-width="{stroke}"')
+
+        # Render to PNG in memory
+        png_data = io.BytesIO()
+        cairosvg.svg2png(bytestring=svg_modified.encode(), write_to=png_data, output_width=size, output_height=size)
+        png_data.seek(0)
+
+        icon_image = Image.open(png_data).convert("RGBA")
+        return icon_image
+
 
     def _parse_border(self, border_spec):
         """Parse a CSS-like border specification: 'thickness style color'
@@ -405,47 +516,56 @@ class TileImage(object):
 
     def __getitem__(self, key):
         if self._pixels is None:
-            image = PILHelper.create_image(self._deck, background=self._color)
+            try:
+                image = PILHelper.create_image(self._deck, background=self._color)
 
-            l_x, l_y, l_w, l_h = self._draw_label(image)
-            v_x, v_y, v_w, v_h = self._draw_value(image)
+                l_x, l_y, l_w, l_h = self._draw_label(image)
+                v_x, v_y, v_w, v_h = self._draw_value(image)
 
-            o_x = 0
-            o_y = (l_y or 0) + (l_h or 0)
-            o_w = image.width
-            o_h = (v_y or image.height) - o_y
+                o_x = 0
+                o_y = (l_y or 0) + (l_h or 0)
+                o_w = image.width
+                o_h = (v_y or image.height) - o_y
 
-            overlay_pos = (int(o_x), int(o_y))
-            overlay_size = (int(o_w), int(o_h))
-            self._draw_overlay(image, overlay_pos, overlay_size)
-            
-            # Draw border after overlay but before labels/values are drawn
-            self._draw_border(image)
-            
-            # Redraw label and value on top of the border
-            if self._label is not None:
-                try:
-                    label_font_path = (self._label_font or 'Assets/Fonts/Roboto-Bold.ttf')
-                    resolved_label_font = self._resolve_asset_path(label_font_path)
-                    font = ImageFont.truetype(resolved_label_font, self._label_size or 12)
-                    d = ImageDraw.Draw(image)
-                    pos = ((image.width - (l_w or 0)) / 2, l_y or 0)
-                    d.text(pos, self._label, font=font, fill=(255, 255, 255, 128))
-                except OSError:
-                    pass
-            
-            if self._value is not None:
-                try:
-                    value_font_path = (self._value_font or 'Assets/Fonts/Roboto-Light.ttf')
-                    resolved_value_font = self._resolve_asset_path(value_font_path)
-                    font = ImageFont.truetype(resolved_value_font, self._value_size or 18)
-                    d = ImageDraw.Draw(image)
-                    pos = ((image.width - (v_w or 0)) / 2, (v_y or image.height) - (v_h or 0))
-                    d.text(pos, self._value, font=font, fill=(255, 255, 255, 128))
-                except OSError:
-                    pass
+                overlay_pos = (int(o_x), int(o_y))
+                overlay_size = (int(o_w), int(o_h))
+                self._draw_overlay(image, overlay_pos, overlay_size)
+                
+                # Draw icons after overlay but before border
+                self._draw_icons(image)
+                
+                # Draw border after icons but before label/value
+                self._draw_border(image)
+                
+                # Redraw label and value on top of the border
+                if self._label is not None:
+                    try:
+                        label_font_path = (self._label_font or 'Assets/Fonts/Roboto-Bold.ttf')
+                        resolved_label_font = self._resolve_asset_path(label_font_path)
+                        font = ImageFont.truetype(resolved_label_font, self._label_size or 12)
+                        d = ImageDraw.Draw(image)
+                        pos = ((image.width - (l_w or 0)) / 2, l_y or 0)
+                        d.text(pos, self._label, font=font, fill=(255, 255, 255, 128))
+                    except OSError:
+                        pass
+                
+                if self._value is not None:
+                    try:
+                        value_font_path = (self._value_font or 'Assets/Fonts/Roboto-Light.ttf')
+                        resolved_value_font = self._resolve_asset_path(value_font_path)
+                        font = ImageFont.truetype(resolved_value_font, self.value_size or 18)
+                        d = ImageDraw.Draw(image)
+                        pos = ((image.width - (v_w or 0)) / 2, (v_y or image.height) - (v_h or 0))
+                        d.text(pos, self.value, font=font, fill=(255, 255, 255, 128))
+                    except OSError:
+                        pass
 
-            self._pixels = PILHelper.to_native_format(self._deck, image)
+                self._pixels = PILHelper.to_native_format(self._deck, image)
+            except Exception as e:
+                logging.error(f"Error rendering tile: {e}", exc_info=True)
+                # Create a blank image as fallback
+                image = PILHelper.create_image(self._deck, background=self.color)
+                self._pixels = PILHelper.to_native_format(self._deck, image)
 
         return self._pixels[key]
 

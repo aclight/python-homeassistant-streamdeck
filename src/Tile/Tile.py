@@ -14,6 +14,7 @@ class BaseTile(object):
         self.hass = hass
         self.tile_class = tile_class
         self.tile_info = tile_info
+        self.base_path = base_path
 
         self.image_tile = TileImage(deck, base_path=base_path)
         self.old_state = None
@@ -69,6 +70,17 @@ class BaseTile(object):
         image_tile.value_font = state_tile.get('value_font')
         image_tile.value_size = state_tile.get('value_size')
         image_tile.border = state_tile.get('border', '').format_map(format_dict)
+        
+        # Handle icons - can be a single string or list of strings
+        icons = state_tile.get('icons')
+        logging.debug(f"State tile icons from config: {icons}")
+        if icons is not None:
+            if isinstance(icons, str):
+                image_tile.icons = icons.format_map(format_dict)
+            elif isinstance(icons, list):
+                image_tile.icons = [icon.format_map(format_dict) if isinstance(icon, str) else icon for icon in icons]
+            else:
+                image_tile.icons = icons
 
         return image_tile
 
