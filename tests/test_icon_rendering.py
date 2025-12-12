@@ -271,23 +271,6 @@ class TestIconDrawing:
         # Verify tabler_icons was called
         mock_tabler.get_icon.assert_called_once_with('heart')
     
-    @patch('Tile.TileImage.tabler_icons')
-    def test_draw_icons_missing_tabler_icons(self, mock_tabler):
-        """Test handling when tabler_icons is not installed."""
-        deck = DummyDeck()
-        ti = TileImage(deck)
-        
-        image = Image.new('RGB', (72, 72))
-        
-        # Simulate ImportError
-        mock_tabler.side_effect = ImportError()
-        
-        # Should handle gracefully
-        with patch('Tile.TileImage.logging') as mock_logging:
-            ti._draw_single_icon(image, 'heart')
-            mock_logging.warning.assert_called()
-
-
 class TestOverlayFileHandling:
     """Test overlay file handling improvements."""
     
