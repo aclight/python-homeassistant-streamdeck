@@ -129,10 +129,155 @@ class ScreenSaver:
                 await self._set_on()
 
 
+class EntityBasedScreensaver:
+    """Screensaver controlled by a Home Assistant entity state.
+    
+    When the monitored entity is 'off', the screensaver activates (screen dark).
+    When 'on', the screen is active at normal brightness.
+    Button presses wake the screen briefly, with auto-sleep after timeout.
+    
+    Handles the tricky case where a power button press causes the entity to turn 'off'
+    before the button is released, which would otherwise wake the screen immediately.
+    """
+    
+    def __init__(self, deck, hass):
+        self.deck = deck
+        self.hass = hass
+        self.entity_id = None
+        self.wake_timeout = 20
+        self.brightness = 20
+        self.callback = None
+        self.on = False
+        self.steps = 0
+        self.in_wake_state = False
+        self.entity_state = 'on'
+        self.last_button_press_time = 0
+        self.button_press_key = None
+        self.suppress_wake_until_release = False
+        
+        deck.set_key_callback_async(self._handle_button_press)
+
+    async def start(self, entity_id, brightness, callback, wake_timeout=5):
+        """Start monitoring the entity for screensaver state."""
+        self.entity_id = entity_id
+        self.brightness = brightness
+        self.callback = callback
+        self.wake_timeout = wake_timeout
+        
+        # Subscribe to state changes for the entity
+        await self.hass.subscribe_to_event('state_changed', self._handle_state_changed)
+        
+        # Get current entity state and apply it
+        current_state = await self.hass.get_state(self.entity_id)
+        if current_state:
+            await self._apply_entity_state(current_state.get('state'))
+        
+        # Start the update loop
+        asyncio.create_task(self._loop())
+
+    async def _handle_state_changed(self, data):
+        """Handle state changes from Home Assistant."""
+        entity_id = data.get('entity_id')
+        if entity_id != self.entity_id:
+            return
+        
+        new_state = data.get('new_state')
+        if new_state is None:
+            return
+        
+        state = new_state.get('state')
+        await self._apply_entity_state(state)
+
+    async def _apply_entity_state(self, state):
+        """Apply the entity state to the screensaver."""
+        self.entity_state = state
+        
+        if state == 'on':
+            # Display should be on
+            if not self.on:
+                await self._set_on()
+        else:
+            # Display should be off (screensaver mode)
+            if self.on and not self.in_wake_state:
+                await self._set_off()
+            # If display was turned off by entity, we should suppress wake on button release
+            # (in case the button press caused the entity change)
+            if self.on or self.in_wake_state:
+                self.suppress_wake_until_release = True
+
+    async def _loop(self):
+        """Main loop to handle wake timeout."""
+        while True:
+            await asyncio.sleep(0.1)
+            
+            if self.in_wake_state:
+                # Check if wake timeout has elapsed
+                elapsed = asyncio.get_event_loop().time() - self.last_button_press_time
+                if elapsed >= self.wake_timeout:
+                    # Return to screensaver if entity is off
+                    if self.entity_state != 'on':
+                        await self._set_off()
+                    self.in_wake_state = False
+
+    async def _set_on(self):
+        """Turn on the screen."""
+        self.deck.set_brightness(self.brightness)
+        self.on = True
+        logging.debug(f"EntityBasedScreensaver: Screen ON")
+
+    async def _set_off(self):
+        """Turn off the screen (screensaver mode)."""
+        self.deck.set_brightness(0)
+        self.on = False
+        self.in_wake_state = False
+        logging.debug(f"EntityBasedScreensaver: Screen OFF")
+
+    async def _handle_button_press(self, deck, key, state):
+        """Handle button presses.
+        
+        state=True: Button pressed
+        state=False: Button released
+        """
+        # Record button press time
+        self.last_button_press_time = asyncio.get_event_loop().time()
+        
+        if state:
+            # Button pressed
+            self.button_press_key = key
+            self.suppress_wake_until_release = False
+            
+            # If screen is off and entity says it should be off, wake it up
+            if not self.on and self.entity_state != 'on':
+                await self._set_on()
+                self.in_wake_state = True
+                logging.debug(f"EntityBasedScreensaver: Button press woke screen")
+                return
+        else:
+            # Button released
+            if self.suppress_wake_until_release:
+                # Entity turned off (probably due to this button press), don't process
+                self.suppress_wake_until_release = False
+                logging.debug(f"EntityBasedScreensaver: Suppressing wake on release due to entity change")
+                return
+            
+            # If screen is off and entity says it should be off, wake it on release
+            if not self.on and self.entity_state != 'on':
+                await self._set_on()
+                self.in_wake_state = True
+                logging.debug(f"EntityBasedScreensaver: Button release woke screen")
+                return
+        
+        # Button pressed/released while screen is on - call original callback
+        if self.on:
+            await self.callback(deck, key, state)
+
+
 async def main(config):
   
     conf_deck_brightness = config.get('streamdeck/brightness', 20)
     conf_deck_screensaver = config.get('streamdeck/screensaver', 0)
+    conf_screensaver_entity = config.get('streamdeck/screensaver_entity')
+    conf_screensaver_wake_timeout = config.get('streamdeck/screensaver_wake_timeout', 5)
     conf_hass_host = config.get('home_assistant/host', 'localhost')
     conf_hass_ssl = config.get('home_assistant/ssl', False)
     conf_hass_port = config.get('home_assistant/port', 8123)
@@ -223,8 +368,20 @@ async def main(config):
     except Exception:
         logging.exception("Failed to set initial StreamDeck brightness")
 
-    screensaver = ScreenSaver(deck=deck)
-    await screensaver.start(brightness=conf_deck_brightness, callback=steamdeck_key_state_changed, timeout=conf_deck_screensaver)
+    # Initialize screensaver - use entity-based if configured, otherwise use timer-based
+    if conf_screensaver_entity:
+        logging.info(f"Using entity-based screensaver, monitoring entity: {conf_screensaver_entity}")
+        screensaver = EntityBasedScreensaver(deck=deck, hass=hass)
+        await screensaver.start(
+            entity_id=conf_screensaver_entity,
+            brightness=conf_deck_brightness,
+            callback=steamdeck_key_state_changed,
+            wake_timeout=conf_screensaver_wake_timeout
+        )
+    else:
+        logging.info("Using timer-based screensaver")
+        screensaver = ScreenSaver(deck=deck)
+        await screensaver.start(brightness=conf_deck_brightness, callback=steamdeck_key_state_changed, timeout=conf_deck_screensaver)
 
     await tile_manager.set_deck_page(None)
     await hass.subscribe_to_event('state_changed', hass_state_changed)

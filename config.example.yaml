@@ -41,6 +41,19 @@ streamdeck:
   # Set to ~ or 0 to keep backlight on indefinitely.
   screensaver: ~
 
+  # Optional: Home Assistant entity ID to monitor for screensaver triggering.
+  # When this entity turns "off", the StreamDeck will enter screensaver mode
+  # (screen goes dark). Any button press will wake it up briefly.
+  # Set to ~ or omit to disable entity-based screensaver triggering.
+  # Example: "input_boolean.streamdeck_screensaver_enabled"
+  screensaver_entity: ~
+
+  # Timeout in seconds to keep the screen on after a button press when in
+  # entity-triggered screensaver mode. After this time, the screen will
+  # return to screensaver state. Only used when screensaver_entity is set.
+  # Default: 20 seconds
+  screensaver_wake_timeout: 20
+
 #################################################
 ###        Tile Configuration Settings        ###
 #################################################
