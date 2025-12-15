@@ -180,15 +180,19 @@ class PercentageControlTile(BaseTile):
                     logging.warning(f'PercentageControlTile: Entity {entity_id} not found')
                     return
                 logging.debug(f'PercentageControlTile: Current state of {entity_id} is {current_state}')    
-                current_value = int(float(current_state.get('state', '0')))
+                current_attributes = current_state.get('attributes', {})
+                min_value = float(current_attributes.get('min', 0))
+                max_value = float(current_attributes.get('max', 100))
+
+                current_value = float(current_state.get('state', '0'))
+                new_value = float(current_value + float(increment))  # increment should be negative to decrease value
+                new_value = max(min_value, min(new_value, max_value))
+                data={'value': new_value}
+
+                await self.hass.set_state(domain=domain, service=service, entity_id=entity_id, data=data)
+            
+                logging.debug(f'PercentageControlTile: Changed {entity_id} from {current_value} to {new_value}')    
             except (ValueError, TypeError) as e:
                 logging.warning(f'PercentageControlTile: Could not parse value: {e}')
                 return
             
-            # Calculate new value based on action.
-            new_value = current_value + increment  # increment should be negative to decrease value
-            data={'value': new_value}
-
-            await self.hass.set_state(domain=domain, service=service, entity_id=entity_id, data=data)
-        
-            logging.debug(f'PercentageControlTile: Changed {entity_id} from {current_value} to {new_value}')
