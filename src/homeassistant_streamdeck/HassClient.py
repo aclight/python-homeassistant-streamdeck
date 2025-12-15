@@ -129,6 +129,69 @@ class ScreenSaver:
                 await self._set_on()
 
 
+class BrightnessController:
+    """Controls StreamDeck brightness based on a Home Assistant entity value.
+    
+    Monitors a numeric entity (0-100) and applies brightness changes to the
+    StreamDeck. Only updates brightness when the screen is on.
+    """
+    
+    def __init__(self, deck, hass, default_brightness=20):
+        self.deck = deck
+        self.hass = hass
+        self.entity_id = None
+        self.current_brightness = default_brightness
+
+    async def start(self, entity_id):
+        """Start monitoring the brightness entity."""
+        if not entity_id:
+            return
+        
+        self.entity_id = entity_id
+        
+        # Subscribe to state changes for the entity
+        await self.hass.subscribe_to_event('state_changed', self._handle_state_changed)
+        
+        # Get current entity state and apply it
+        current_state = await self.hass.get_state(self.entity_id)
+        if current_state:
+            state_value = current_state.get('state')
+            await self._apply_brightness(state_value)
+
+    async def _handle_state_changed(self, data):
+        """Handle state changes from Home Assistant."""
+        entity_id = data.get('entity_id')
+        if entity_id != self.entity_id:
+            return
+        
+        new_state = data.get('new_state')
+        if new_state is None:
+            return
+        
+        state_value = new_state.get('state')
+        await self._apply_brightness(state_value)
+
+    async def _apply_brightness(self, state_value):
+        """Parse state value and apply brightness to the deck."""
+        try:
+            # Try to convert to float/int
+            brightness_value = float(state_value)
+            brightness_int = int(brightness_value)
+            
+            # Clamp to 0-100 range
+            if brightness_int < 0:
+                brightness_int = 0
+            elif brightness_int > 100:
+                brightness_int = 100
+            
+            self.current_brightness = brightness_int
+            
+            # Update the deck brightness immediately
+            self.deck.set_brightness(brightness_int)
+            logging.debug(f"BrightnessController: Set brightness to {brightness_int}%")
+        except (ValueError, TypeError) as e:
+            logging.warning(f"BrightnessController: Could not parse brightness value '{state_value}': {e}")
+
 class EntityBasedScreensaver:
     """Screensaver controlled by a Home Assistant entity state.
     
@@ -140,9 +203,10 @@ class EntityBasedScreensaver:
     before the button is released, which would otherwise wake the screen immediately.
     """
     
-    def __init__(self, deck, hass):
+    def __init__(self, deck, hass, brightness_controller=None):
         self.deck = deck
         self.hass = hass
+        self.brightness_controller = brightness_controller
         self.entity_id = None
         self.wake_timeout = 20
         self.brightness = 20
@@ -222,9 +286,14 @@ class EntityBasedScreensaver:
 
     async def _set_on(self):
         """Turn on the screen."""
-        self.deck.set_brightness(self.brightness)
+        # Use brightness from controller if available, otherwise use default
+        brightness = self.brightness
+        if self.brightness_controller and self.brightness_controller.entity_id:
+            brightness = self.brightness_controller.current_brightness
+        
+        self.deck.set_brightness(brightness)
         self.on = True
-        logging.debug(f"EntityBasedScreensaver: Screen ON")
+        logging.debug(f"EntityBasedScreensaver: Screen ON (brightness: {brightness}%)")
 
     async def _set_off(self):
         """Turn off the screen (screensaver mode)."""
@@ -279,6 +348,7 @@ async def main(config):
     conf_deck_screensaver = config.get('streamdeck/screensaver', 0)
     conf_screensaver_entity = config.get('streamdeck/screensaver_entity')
     conf_screensaver_wake_timeout = config.get('streamdeck/screensaver_wake_timeout', 5)
+    conf_brightness_entity = config.get('streamdeck/brightness_entity')
     conf_hass_host = config.get('home_assistant/host', 'localhost')
     conf_hass_ssl = config.get('home_assistant/ssl', False)
     conf_hass_port = config.get('home_assistant/port', 8123)
@@ -369,10 +439,16 @@ async def main(config):
     except Exception:
         logging.exception("Failed to set initial StreamDeck brightness")
 
+    # Initialize brightness controller if configured
+    brightness_controller = BrightnessController(deck=deck, hass=hass, default_brightness=conf_deck_brightness)
+    if conf_brightness_entity:
+        logging.info(f"Using brightness control via entity: {conf_brightness_entity}")
+        await brightness_controller.start(conf_brightness_entity)
+
     # Initialize screensaver - use entity-based if configured, otherwise use timer-based
     if conf_screensaver_entity:
         logging.info(f"Using entity-based screensaver, monitoring entity: {conf_screensaver_entity}")
-        screensaver = EntityBasedScreensaver(deck=deck, hass=hass)
+        screensaver = EntityBasedScreensaver(deck=deck, hass=hass, brightness_controller=brightness_controller)
         await screensaver.start(
             entity_id=conf_screensaver_entity,
             brightness=conf_deck_brightness,

@@ -127,3 +127,68 @@ class PageTile(BaseTile):
 
         page_name = self.tile_info.get('page')
         await tile_manager.set_deck_page(page_name)
+
+class PercentageControlTile(BaseTile):
+    """Tile for controlling any percentage-based value (0-100) in Home Assistant.
+    
+    Works with input_number, number entities, or any entity with numeric state.
+    Can be used for brightness, volume, fan speed, or any other 0-100 percentage value.
+    """
+    
+    def __init__(self, deck, hass, tile_class, tile_info, base_path=None):
+        super().__init__(deck, hass, tile_class, tile_info, base_path=base_path)
+
+    @property
+    async def state(self):
+        """Get current percentage value as state for display."""
+        entity_id = self.tile_info.get('entity_id')
+        if not entity_id:
+            return 'unknown'
+        
+        hass_state = await self.hass.get_state(entity_id)
+        if not hass_state:
+            return 'unknown'
+        
+        try:
+            value = int(float(hass_state.get('state', '0')))
+            return str(value)
+        except (ValueError, TypeError):
+            return 'unknown'
+
+    async def button_state_changed(self, tile_manager, state):
+        """Handle button press to increase/decrease the percentage value."""
+        if not state:
+            return
+        
+        if self.tile_class.get('action') is not None:
+            action = self.tile_class.get('action').split('/')
+            if len(action) == 1:
+                domain = 'homeassistant'
+                service = action[0]
+            else:
+                domain = action[0]
+                service = action[1]
+
+            data = None
+            entity_id = self.tile_info['entity_id']
+            increment = self.tile_info.get('increment', 10)
+
+            # Get current value
+            try:
+                current_state = await self.hass.get_state(entity_id)
+                if not current_state:
+                    logging.warning(f'PercentageControlTile: Entity {entity_id} not found')
+                    return
+                logging.debug(f'PercentageControlTile: Current state of {entity_id} is {current_state}')    
+                current_value = int(float(current_state.get('state', '0')))
+            except (ValueError, TypeError) as e:
+                logging.warning(f'PercentageControlTile: Could not parse value: {e}')
+                return
+            
+            # Calculate new value based on action.
+            new_value = current_value + increment  # increment should be negative to decrease value
+            data={'value': new_value}
+
+            await self.hass.set_state(domain=domain, service=service, entity_id=entity_id, data=data)
+        
+            logging.debug(f'PercentageControlTile: Changed {entity_id} from {current_value} to {new_value}')

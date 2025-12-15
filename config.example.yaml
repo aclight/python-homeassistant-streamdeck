@@ -35,6 +35,7 @@ home_assistant:
 #################################################
 streamdeck:
   # Brightness percentage of the backlight when in use. Should range from 0 to 100.
+  # This is the default brightness when not controlled by brightness_entity.
   brightness: 20
 
   # Timeout in seconds before the screen backlight is turned off automatically.
@@ -53,6 +54,15 @@ streamdeck:
   # return to screensaver state. Only used when screensaver_entity is set.
   # Default: 20 seconds
   screensaver_wake_timeout: 20
+
+  # Optional: Home Assistant entity ID to monitor for brightness control.
+  # The entity's state should be a numeric value between 0 and 100 representing
+  # the brightness percentage. When the entity value changes, the StreamDeck
+  # backlight brightness will be updated accordingly. Only applied when the
+  # screen is on (not in screensaver mode).
+  # Set to ~ or omit to disable brightness control via entity.
+  # Examples: "input_number.streamdeck_brightness", "sensor.room_brightness"
+  brightness_entity: ~
 
 #################################################
 ###        Tile Configuration Settings        ###
@@ -125,6 +135,19 @@ tiles:
         label_size: 12
         overlay: 'Assets/Images/page.png'
 
+  - type: "percentage"
+    class: 'PercentageControlTile'
+    states:
+      - state: ~
+        label: '{name}'
+        label_font: Assets/Fonts/Roboto-Bold.ttf
+        label_size: 12
+        value: '{state}%'
+        value_font: Assets/Fonts/Roboto-Light.ttf
+        value_size: 18
+        overlay: 'Assets/Images/light_on.png'
+    action: 'input_number/set_value'
+
 #################################################
 ###    Screen Layout Configuration Settings   ###
 #################################################
@@ -167,6 +190,22 @@ screens:
         type: "page"
         name: "Sensors"
         page: "sensors"
+      # Percentage control tile examples (increase/decrease any 0-100 value)
+      # - position: [3, 2]
+      #   type: "percentage"
+      #   name: "Brightness +"
+      #   entity_id: "input_number.streamdeck_brightness"
+      #   increment: 10
+      # - position: [2, 0]
+      #   type: "percentage"
+      #   name: "Brightness -"
+      #   entity_id: "input_number.streamdeck_brightness"
+      #   increment: -10
+      # - position: [1, 0]
+      #   type: "percentage"
+      #   name: "Volume +"
+      #   entity_id: "input_number.media_volume"
+      #   increment: 5
 
   - name: "sensors"
     tiles:
