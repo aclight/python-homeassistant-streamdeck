@@ -198,7 +198,8 @@ class EntityBasedScreensaver:
                 await self._set_on()
         else:
             # Display should be off (screensaver mode)
-            if self.on and not self.in_wake_state:
+            # Apply off state unless we're in an active wake state from a button press
+            if not self.in_wake_state:
                 await self._set_off()
             # If display was turned off by entity, we should suppress wake on button release
             # (in case the button press caused the entity change)
