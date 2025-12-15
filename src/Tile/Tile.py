@@ -160,39 +160,45 @@ class PercentageControlTile(BaseTile):
         if not state:
             return
         
-        if self.tile_class.get('action') is not None:
-            action = self.tile_class.get('action').split('/')
-            if len(action) == 1:
-                domain = 'homeassistant'
-                service = action[0]
-            else:
-                domain = action[0]
-                service = action[1]
+        entity_id = self.tile_info.get('entity_id')
+        if not entity_id:
+            logging.warning('PercentageControlTile: No entity_id configured')
+            return
+        
+        action = self.tile_class.get('action', '').lower()
+        increment = self.tile_info.get('increment', 10)
 
-            data = None
-            entity_id = self.tile_info['entity_id']
-            increment = self.tile_info.get('increment', 10)
-
-            # Get current value
-            try:
-                current_state = await self.hass.get_state(entity_id)
-                if not current_state:
-                    logging.warning(f'PercentageControlTile: Entity {entity_id} not found')
-                    return
-                logging.debug(f'PercentageControlTile: Current state of {entity_id} is {current_state}')    
-                current_attributes = current_state.get('attributes', {})
-                min_value = float(current_attributes.get('min', 0))
-                max_value = float(current_attributes.get('max', 100))
-
-                current_value = float(current_state.get('state', '0'))
-                new_value = float(current_value + float(increment))  # increment should be negative to decrease value
-                new_value = max(min_value, min(new_value, max_value))
-                data={'value': new_value}
-
-                await self.hass.set_state(domain=domain, service=service, entity_id=entity_id, data=data)
-            
-                logging.debug(f'PercentageControlTile: Changed {entity_id} from {current_value} to {new_value}')    
-            except (ValueError, TypeError) as e:
-                logging.warning(f'PercentageControlTile: Could not parse value: {e}')
+        # Get current value
+        try:
+            current_state = await self.hass.get_state(entity_id)
+            if not current_state:
+                logging.warning(f'PercentageControlTile: Entity {entity_id} not found')
                 return
+            logging.debug(f'PercentageControlTile: Current state of {entity_id} is {current_state}')    
+            current_attributes = current_state.get('attributes', {})
+            min_value = float(current_attributes.get('min', 0))
+            max_value = float(current_attributes.get('max', 100))
+            logging.debug(f'PercentageControlTile: Min is {min_value}, Max is {max_value}')
+
+            current_value = float(current_state.get('state', '0'))
+            
+            # Calculate new value based on action
+            if 'increase' in action or 'up' in action:
+                new_value = current_value + float(increment)
+            elif 'decrease' in action or 'down' in action:
+                new_value = current_value - float(increment)
+            else:
+                logging.warning(f'PercentageControlTile: Unknown action: {action}')
+                return
+            
+            # Clamp to configured range
+            new_value = max(min_value, min(new_value, max_value))
+            data = {'value': new_value}
+
+            await self.hass.set_state(domain='input_number', service='set_value', entity_id=entity_id, data=data)
+        
+            logging.debug(f'PercentageControlTile: Changed {entity_id} from {current_value} to {new_value}')    
+        except (ValueError, TypeError) as e:
+            logging.warning(f'PercentageControlTile: Could not parse value: {e}')
+            return
             

@@ -23,7 +23,7 @@ def mock_hass():
 
 
 @pytest.fixture
-async def brightness_controller(mock_deck, mock_hass):
+def brightness_controller(mock_deck, mock_hass):
     """Create a BrightnessController instance for testing."""
     from homeassistant_streamdeck.HassClient import BrightnessController
     
