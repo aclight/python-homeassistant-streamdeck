@@ -484,7 +484,8 @@ async def main(config):
             logging.exception("Error closing Home Assistant connection")
 
         try:
-            # Close the StreamDeck device cleanly if possible
+            # Reset the StreamDeck device and close it cleanly
+            deck.reset()
             deck.close()
         except Exception:
             logging.exception("Error closing StreamDeck")
