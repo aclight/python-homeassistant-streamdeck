@@ -22,6 +22,7 @@ class HomeAssistantWS(object):
 
         self._id = itertools.count(start=1, step=1)
         self._websocket = None
+        self._session = None
         self._event_subscriptions = collections.defaultdict(list)
         self._message_responses = dict()
         self._entity_states = dict()
@@ -97,7 +98,8 @@ class HomeAssistantWS(object):
         self._entity_states[entity_id] = data['new_state']
 
     async def connect(self, api_password=None, api_token=None):
-        self._websocket = await aiohttp.ClientSession().ws_connect('{}://{}:{}/api/websocket'.format(self._protocol, self._host, self._port))
+        self._session = aiohttp.ClientSession()
+        self._websocket = await self._session.ws_connect('{}://{}:{}/api/websocket'.format(self._protocol, self._host, self._port))
         self._loop.create_task(self._receiver())
 
         # First request must be an auth message, if a token or legacy password is provided
@@ -141,3 +143,12 @@ class HomeAssistantWS(object):
 
     async def get_all_states(self):
         return self._entity_states
+
+    async def close(self):
+        """Close the websocket connection and client session."""
+        if self._websocket is not None:
+            await self._websocket.close()
+            self._websocket = None
+        if self._session is not None:
+            await self._session.close()
+            self._session = None
