@@ -481,7 +481,7 @@ class TileImage(object):
             return (image.width, 0, image.width, 1)
 
     def _draw_value(self, image):
-        if self._value is None:
+        if self._value is None or self._value == '':
             return None, None, None, None
 
         try:
@@ -534,32 +534,9 @@ class TileImage(object):
                 # Draw icons after overlay but before border
                 self._draw_icons(image)
                 
-                # Draw border after icons but before label/value
+                # Draw border after icons
                 self._draw_border(image)
                 
-                # Redraw label and value on top of the border
-                if self._label is not None:
-                    try:
-                        label_font_path = (self._label_font or 'Assets/Fonts/Roboto-Bold.ttf')
-                        resolved_label_font = self._resolve_asset_path(label_font_path)
-                        font = ImageFont.truetype(resolved_label_font, self._label_size or 12)
-                        d = ImageDraw.Draw(image)
-                        pos = ((image.width - (l_w or 0)) / 2, l_y or 0)
-                        d.text(pos, self._label, font=font, fill=(255, 255, 255, 128))
-                    except OSError:
-                        pass
-                
-                if self._value is not None:
-                    try:
-                        value_font_path = (self._value_font or 'Assets/Fonts/Roboto-Light.ttf')
-                        resolved_value_font = self._resolve_asset_path(value_font_path)
-                        font = ImageFont.truetype(resolved_value_font, self.value_size or 18)
-                        d = ImageDraw.Draw(image)
-                        pos = ((image.width - (v_w or 0)) / 2, (v_y or image.height) - (v_h or 0))
-                        d.text(pos, self.value, font=font, fill=(255, 255, 255, 128))
-                    except OSError:
-                        pass
-
                 self._pixels = PILHelper.to_native_format(self._deck, image)
             except Exception as e:
                 logging.error(f"Error rendering tile: {e}", exc_info=True)
