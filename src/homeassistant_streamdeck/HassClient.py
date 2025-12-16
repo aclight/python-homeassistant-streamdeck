@@ -18,8 +18,6 @@ import signal
 import os
 from pathlib import Path
 
-logging.basicConfig(level=logging.DEBUG)
-
 class Config(object):
     # Sensitive keys that can be overridden by environment variables
     SENSITIVE_KEYS = {
