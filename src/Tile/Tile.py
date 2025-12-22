@@ -187,6 +187,10 @@ class PercentageControlTile(BaseTile):
                 new_value = current_value + float(increment)
             elif 'decrease' in action or 'down' in action:
                 new_value = current_value - float(increment)
+            elif 'set_value' in action or 'number/' in action or 'input_number/' in action:
+                # For set_value actions, still use increment/decrement logic
+                # (the action domain doesn't specify the direction, that's determined by button state)
+                new_value = current_value + float(increment)
             else:
                 logging.warning(f'PercentageControlTile: Unknown action: {action}')
                 return
@@ -195,7 +199,13 @@ class PercentageControlTile(BaseTile):
             new_value = max(min_value, min(new_value, max_value))
             data = {'value': new_value}
 
-            await self.hass.set_state(domain='input_number', service='set_value', entity_id=entity_id, data=data)
+            # Determine the correct domain/service based on the action or entity type
+            if 'number/' in action:
+                # Use number domain for newer number helper
+                await self.hass.set_state(domain='number', service='set_value', entity_id=entity_id, data=data)
+            else:
+                # Default to input_number for backward compatibility
+                await self.hass.set_state(domain='input_number', service='set_value', entity_id=entity_id, data=data)
         
             logging.debug(f'PercentageControlTile: Changed {entity_id} from {current_value} to {new_value}')    
         except (ValueError, TypeError) as e:
