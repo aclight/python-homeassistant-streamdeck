@@ -7,6 +7,7 @@ while exposing an installed console script entry point.
 
 import argparse
 import asyncio
+import logging
 import os
 import sys
 
@@ -57,6 +58,11 @@ def run():
         sys.exit(1)
 
     config = Config(config_path)
+    
+    # Set logging level based on config debug flag
+    log_level = logging.DEBUG if config.get('debug') else logging.INFO
+    logging.basicConfig(level=log_level)
+    
     asyncio.run(hass_main(config))
 
 

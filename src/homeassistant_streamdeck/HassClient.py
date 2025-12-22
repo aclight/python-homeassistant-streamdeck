@@ -410,8 +410,9 @@ async def main(config):
     async def steamdeck_key_state_changed(deck, key, state):
         await tile_manager.button_state_changed(key, state)
 
-    # enable loop-level debug settings if requested in config
+    # enable logging-level and loop-level debug settings if requested in config
     if config.get('debug'):
+        logging.getLogger().setLevel(logging.DEBUG)
         logging.info('Debug enabled')
         loop = asyncio.get_running_loop()
         loop.set_debug(True)
@@ -490,9 +491,11 @@ async def main(config):
 
 
 if __name__ == '__main__':
-    logging.basicConfig(level=logging.INFO)
-
     config = Config('config.yaml')
+    
+    # Set logging level based on config debug flag
+    log_level = logging.DEBUG if config.get('debug') else logging.INFO
+    logging.basicConfig(level=log_level)
 
     # Run main inside a managed event loop. main() will not return (it waits forever),
     # so control stays inside asyncio.run and background tasks remain active.
