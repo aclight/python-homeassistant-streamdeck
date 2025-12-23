@@ -128,10 +128,9 @@ async def test_percentage_tile_decrease_action(mock_deck, mock_hass, tile_class_
     """Test decreasing percentage value."""
     from Tile.Tile import PercentageControlTile
     
-    tile_class_config['action'] = 'decrease'
     tile_info = {
         'entity_id': 'input_number.test_value',
-        'increment': 10,
+        'increment': -10,
     }
     
     tile = PercentageControlTile(
@@ -173,10 +172,9 @@ async def test_percentage_tile_clamp_to_min(mock_deck, mock_hass, tile_class_con
     """Test that decrease is clamped to min value."""
     from Tile.Tile import PercentageControlTile
     
-    tile_class_config['action'] = 'decrease'
     tile_info = {
         'entity_id': 'input_number.test_value',
-        'increment': 10,
+        'increment': -10,
     }
     
     tile = PercentageControlTile(
