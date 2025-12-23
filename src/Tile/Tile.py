@@ -156,7 +156,10 @@ class PercentageControlTile(BaseTile):
             return 'unknown'
 
     async def button_state_changed(self, tile_manager, state):
-        """Handle button press to increase/decrease the percentage value."""
+        """Handle button press to increase/decrease the percentage value.
+        
+        Use positive increment to increase, negative to decrease.
+        """
         if not state:
             return
         
@@ -165,8 +168,9 @@ class PercentageControlTile(BaseTile):
             logging.warning('PercentageControlTile: No entity_id configured')
             return
         
-        action = self.tile_class.get('action', '').lower()
-        increment = self.tile_info.get('increment', 10)
+        # Allow action to be overridden per-tile, fallback to tile_class action
+        action = (self.tile_info.get('action') or self.tile_class.get('action', '')).lower()
+        increment = float(self.tile_info.get('increment', 10))
 
         # Get current value
         try:
@@ -182,25 +186,15 @@ class PercentageControlTile(BaseTile):
 
             current_value = float(current_state.get('state', '0'))
             
-            # Calculate new value based on action
-            if 'increase' in action or 'up' in action:
-                new_value = current_value + float(increment)
-            elif 'decrease' in action or 'down' in action:
-                new_value = current_value - float(increment)
-            elif 'set_value' in action or 'number/' in action or 'input_number/' in action:
-                # For set_value actions, still use increment/decrement logic
-                # (the action domain doesn't specify the direction, that's determined by button state)
-                new_value = current_value + float(increment)
-            else:
-                logging.warning(f'PercentageControlTile: Unknown action: {action}')
-                return
+            # Calculate new value by applying increment (positive or negative)
+            new_value = current_value + increment
             
             # Clamp to configured range
             new_value = max(min_value, min(new_value, max_value))
             data = {'value': new_value}
 
             # Determine the correct domain/service based on the action or entity type
-            if 'number/' in action:
+            if 'number/' in action and 'input_number' not in action:
                 # Use number domain for newer number helper
                 await self.hass.set_state(domain='number', service='set_value', entity_id=entity_id, data=data)
             else:
