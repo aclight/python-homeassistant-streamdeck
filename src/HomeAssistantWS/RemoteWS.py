@@ -26,6 +26,10 @@ class HomeAssistantWS(object):
         self._event_subscriptions = collections.defaultdict(list)
         self._message_responses = dict()
         self._entity_states = dict()
+        
+        # Connection state tracking
+        self._connected = False
+        self._connection_callbacks = []
 
     async def _send_message(self, message):
         logging.debug("Sending: {}".format(message))
@@ -119,6 +123,10 @@ class HomeAssistantWS(object):
         ]
 
         await asyncio.wait(initial_requests, timeout=5)
+        
+        # Mark as connected
+        await self._notify_connection_state(True)
+        logging.info("Connected to Home Assistant")
 
     async def subscribe_to_event(self, event_type, future):
         self._event_subscriptions[event_type].append(future)
@@ -144,8 +152,32 @@ class HomeAssistantWS(object):
     async def get_all_states(self):
         return self._entity_states
 
+    def is_connected(self):
+        """Check if currently connected to Home Assistant."""
+        return self._connected
+
+    def register_connection_callback(self, callback):
+        """Register a callback to be called when connection state changes.
+        
+        Callback signature: callback(connected: bool)
+        """
+        self._connection_callbacks.append(callback)
+
+    async def _notify_connection_state(self, connected):
+        """Notify all registered callbacks of connection state change."""
+        self._connected = connected
+        for callback in self._connection_callbacks:
+            try:
+                if asyncio.iscoroutinefunction(callback):
+                    await callback(connected)
+                else:
+                    callback(connected)
+            except Exception as e:
+                logging.error(f"Error in connection state callback: {e}")
+
     async def close(self):
         """Close the websocket connection and client session."""
+        await self._notify_connection_state(False)
         if self._websocket is not None:
             await self._websocket.close()
             self._websocket = None

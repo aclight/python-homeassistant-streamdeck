@@ -82,6 +82,12 @@ class BaseTile(object):
             else:
                 image_tile.icons = icons
 
+        # Apply a visual indicator if Home Assistant is disconnected
+        if self.hass and not self.hass.is_connected():
+            # Apply a gray tint to indicate disconnected state
+            image_tile.color = '#444444'
+            logging.debug(f"Tile disconnected indicator applied")
+
         return image_tile
 
     async def button_state_changed(self, tile_manager, state):

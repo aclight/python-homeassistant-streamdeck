@@ -19,6 +19,7 @@ class TileManager(object):
         self.current_page = None
         self.empty_tile = BaseTile(deck, base_path=base_path)
         self.current_page = pages.get('home')
+        self.is_connected = True
 
         if self.current_page is None:
             raise KeyError('Deck page configuration must have a default "home" page.')
@@ -49,3 +50,11 @@ class TileManager(object):
         tile = self.current_page.get((x, y))
         if tile is not None:
             await tile.button_state_changed(self, state)
+
+    def set_connection_state(self, connected):
+        """Update connection state and redraw page if needed."""
+        if self.is_connected != connected:
+            self.is_connected = connected
+            # Schedule a page redraw to show/hide disconnected state
+            import asyncio
+            asyncio.create_task(self.update_page(force_redraw=True))

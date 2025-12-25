@@ -63,7 +63,11 @@ def run():
     log_level = logging.DEBUG if config.get('debug') else logging.INFO
     logging.basicConfig(level=log_level)
     
-    asyncio.run(hass_main(config))
+    try:
+        asyncio.run(hass_main(config))
+    except Exception:
+        logging.exception("Fatal error in hass-streamdeck")
+        sys.exit(1)
 
 
 if __name__ == '__main__':

@@ -190,6 +190,76 @@ class BrightnessController:
         except (ValueError, TypeError) as e:
             logging.warning(f"BrightnessController: Could not parse brightness value '{state_value}': {e}")
 
+
+class ConnectionMonitor:
+    """Monitors Home Assistant connection state and handles reconnection attempts."""
+    
+    def __init__(self, hass, tile_manager, reconnect_interval=5, reconnect_retries=3):
+        self.hass = hass
+        self.tile_manager = tile_manager
+        self.reconnect_interval = reconnect_interval
+        self.reconnect_retries = reconnect_retries
+        self.is_connected = False
+        self.api_password = None
+        self.api_token = None
+        self.screensaver = None
+        
+        # Register for connection state changes
+        hass.register_connection_callback(self._on_connection_state_changed)
+
+    async def set_credentials(self, api_password=None, api_token=None):
+        """Store credentials for reconnection attempts."""
+        self.api_password = api_password
+        self.api_token = api_token
+
+    def set_screensaver(self, screensaver):
+        """Set the screensaver instance to control on connection changes."""
+        self.screensaver = screensaver
+
+    async def _on_connection_state_changed(self, connected):
+        """Callback when connection state changes."""
+        was_connected = self.is_connected
+        self.is_connected = connected
+        logging.info(f"ConnectionMonitor: Connection state changed: {was_connected} -> {connected}")
+        
+        # Update tile manager connection state for display purposes
+        await self.tile_manager.update_page(force_redraw=True)
+        
+        if connected and not was_connected:
+            logging.info("Home Assistant connection restored")
+            # Restore screensaver to normal state if it was forced dark
+            if self.screensaver and hasattr(self.screensaver, '_restore_after_disconnect'):
+                logging.info("ConnectionMonitor: Calling screensaver._restore_after_disconnect()")
+                await self.screensaver._restore_after_disconnect()
+        elif not connected and was_connected:
+            logging.warning("Lost connection to Home Assistant")
+            # Force screensaver to dark mode when disconnected
+            if self.screensaver and hasattr(self.screensaver, '_activate_on_disconnect'):
+                logging.warning("ConnectionMonitor: Calling screensaver._activate_on_disconnect()")
+                await self.screensaver._activate_on_disconnect()
+
+    async def monitor(self):
+        """Background task to monitor connection and attempt reconnection."""
+        while True:
+            if not self.is_connected:
+                await self._attempt_reconnect()
+            await asyncio.sleep(self.reconnect_interval)
+
+    async def _attempt_reconnect(self):
+        """Attempt to reconnect to Home Assistant."""
+        for attempt in range(1, self.reconnect_retries + 1):
+            try:
+                logging.info(f"Attempting to reconnect to Home Assistant (attempt {attempt}/{self.reconnect_retries})...")
+                await self.hass.connect(api_password=self.api_password, api_token=self.api_token)
+                return  # Connection successful
+            except Exception as e:
+                if attempt < self.reconnect_retries:
+                    logging.debug(f"Reconnection attempt {attempt} failed: {e}")
+                    await asyncio.sleep(self.reconnect_interval)
+                else:
+                    logging.warning(f"Failed to reconnect after {self.reconnect_retries} attempts: {e}")
+
+
 class EntityBasedScreensaver:
     """Screensaver controlled by a Home Assistant entity state.
     
@@ -217,6 +287,10 @@ class EntityBasedScreensaver:
         self.button_press_key = None
         self.suppress_wake_until_release = False
         
+        # Track disconnection state
+        self.hass_disconnected = False
+        self.state_before_disconnect = 'on'
+        
         deck.set_key_callback_async(self._handle_button_press)
 
     async def start(self, entity_id, brightness, callback, wake_timeout=5):
@@ -226,13 +300,22 @@ class EntityBasedScreensaver:
         self.callback = callback
         self.wake_timeout = wake_timeout
         
+        logging.debug(f"EntityBasedScreensaver: Starting with entity {entity_id}, brightness {brightness}")
+        
         # Subscribe to state changes for the entity
-        await self.hass.subscribe_to_event('state_changed', self._handle_state_changed)
+        try:
+            await self.hass.subscribe_to_event('state_changed', self._handle_state_changed)
+        except Exception as e:
+            logging.debug(f"EntityBasedScreensaver: Could not subscribe to events yet: {e}")
         
         # Get current entity state and apply it
-        current_state = await self.hass.get_state(self.entity_id)
-        if current_state:
-            await self._apply_entity_state(current_state.get('state'))
+        try:
+            current_state = await self.hass.get_state(self.entity_id)
+            if current_state:
+                await self._apply_entity_state(current_state.get('state'))
+                logging.debug(f"EntityBasedScreensaver: Applied initial state: {current_state.get('state')}")
+        except Exception as e:
+            logging.debug(f"EntityBasedScreensaver: Could not get initial entity state: {e}")
         
         # Start the update loop
         asyncio.create_task(self._loop())
@@ -289,16 +372,25 @@ class EntityBasedScreensaver:
         if self.brightness_controller and self.brightness_controller.entity_id:
             brightness = self.brightness_controller.current_brightness
         
-        self.deck.set_brightness(brightness)
-        self.on = True
-        logging.debug(f"EntityBasedScreensaver: Screen ON (brightness: {brightness}%)")
+        try:
+            self.deck.set_brightness(brightness)
+            self.on = True
+            logging.debug(f"EntityBasedScreensaver: Screen ON (brightness: {brightness}%)")
+        except Exception as e:
+            logging.warning(f"EntityBasedScreensaver: Could not set screen brightness: {e}")
+            self.on = True  # Mark as on even if we couldn't set brightness
 
     async def _set_off(self):
         """Turn off the screen (screensaver mode)."""
-        self.deck.set_brightness(0)
-        self.on = False
-        self.in_wake_state = False
-        logging.debug(f"EntityBasedScreensaver: Screen OFF")
+        try:
+            self.deck.set_brightness(0)
+            self.on = False
+            self.in_wake_state = False
+            logging.debug(f"EntityBasedScreensaver: Screen OFF")
+        except Exception as e:
+            logging.warning(f"EntityBasedScreensaver: Could not set screen brightness: {e}")
+            self.on = False  # Mark as off even if we couldn't set brightness
+            self.in_wake_state = False
 
     async def _handle_button_press(self, deck, key, state):
         """Handle button presses.
@@ -340,7 +432,49 @@ class EntityBasedScreensaver:
             await self.callback(deck, key, state)
 
 
+    async def _activate_on_disconnect(self):
+        """Activate screensaver when Home Assistant disconnects."""
+        logging.info(f"EntityBasedScreensaver: _activate_on_disconnect() called (hass_disconnected={self.hass_disconnected})")
+        if not self.hass_disconnected:
+            self.hass_disconnected = True
+            # Save the current entity state so we can restore it later
+            self.state_before_disconnect = self.entity_state
+            # Force dark mode
+            self.entity_state = 'off'
+            logging.info(f"EntityBasedScreensaver: Attempting disconnect activation (on={self.on}, in_wake_state={self.in_wake_state})")
+            if not self.in_wake_state:
+                logging.info("EntityBasedScreensaver: Calling _set_off()")
+                await self._set_off()
+            else:
+                logging.warning("EntityBasedScreensaver: in_wake_state=True, skipping _set_off()")
+            logging.info("EntityBasedScreensaver: Activated due to Home Assistant disconnection")
+        else:
+            logging.debug("EntityBasedScreensaver: Already in hass_disconnected state, skipping")
+
+    async def _restore_after_disconnect(self):
+        """Restore screensaver state after Home Assistant reconnects."""
+        if self.hass_disconnected:
+            self.hass_disconnected = False
+            # Restore the previous entity state
+            self.entity_state = self.state_before_disconnect
+            # Apply the restored state
+            if self.entity_state == 'on':
+                if not self.on:
+                    await self._set_on()
+            else:
+                if not self.in_wake_state:
+                    await self._set_off()
+            logging.info(f"EntityBasedScreensaver: Restored after Home Assistant reconnection (state: {self.entity_state})")
+
+
 async def main(config):
+    try:
+        await _main_impl(config)
+    except Exception:
+        logging.exception("Fatal error in main")
+        raise
+
+async def _main_impl(config):
   
     conf_deck_brightness = config.get('streamdeck/brightness', 20)
     conf_deck_screensaver = config.get('streamdeck/screensaver', 0)
@@ -397,6 +531,10 @@ async def main(config):
             conf_screen_tile_type = conf_screen_tile.get('type')
 
             conf_tile_class_info = tiles.get(conf_screen_tile_type)
+            
+            if conf_tile_class_info is None:
+                logging.error(f"Unknown tile type '{conf_screen_tile_type}' in screen '{conf_screen_name}' at position {conf_screen_tile_pos}")
+                continue
 
             page_tiles[tuple(conf_screen_tile_pos)] = conf_tile_class_info['class'](deck=deck, hass=hass, tile_class=conf_tile_class_info, tile_info=conf_screen_tile, base_path=config.config_dir)
 
@@ -418,49 +556,146 @@ async def main(config):
         loop.set_debug(True)
         loop.slow_callback_duration = 0.15
 
+    # Open the StreamDeck first (before attempting to connect to Home Assistant)
+    # Try to open, but don't block startup if device isn't available
+    async def open_deck_with_retry():
+        nonlocal deck
+        
+        # Initial delay to allow device to fully reset after service restart
+        logging.info("Waiting for StreamDeck device to be ready...")
+        await asyncio.sleep(1)
+        
+        max_retries = 5
+        retry_interval = 1
+        for attempt in range(1, max_retries + 1):
+            try:
+                logging.debug(f"StreamDeck open attempt {attempt}/{max_retries}")
+                deck.open()
+                logging.info("StreamDeck device opened successfully")
+                
+                # Reset the device to a known state
+                try:
+                    logging.debug("Resetting StreamDeck device")
+                    deck.reset()
+                    await asyncio.sleep(0.5)  # Brief pause after reset
+                except Exception as e:
+                    logging.warning(f"Failed to reset StreamDeck: {e}")
+
+                try:
+                    # Ensure the device is awake and at a visible brightness (do this after reset)
+                    deck.set_brightness(conf_deck_brightness)
+                    logging.debug(f"Set initial StreamDeck brightness to {conf_deck_brightness}%")
+                except Exception as e:
+                    logging.warning(f"Failed to set initial StreamDeck brightness: {e}")
+                
+                logging.info("StreamDeck device is ready")
+                return True
+            except Exception as e:
+                if attempt < max_retries:
+                    # If we get a device error, try re-enumerating devices on later attempts
+                    if "device" in str(e).lower() or "hid" in str(e).lower():
+                        if attempt > 2:  # After second failure, try re-enumerating
+                            logging.debug("Attempting to re-enumerate StreamDeck devices...")
+                            try:
+                                new_decks = StreamDeck.DeviceManager().enumerate()
+                                if new_decks:
+                                    deck = new_decks[0]
+                                    logging.info("Re-enumerated StreamDeck devices, found device")
+                                else:
+                                    logging.warning("Re-enumeration found no devices")
+                            except Exception as enum_error:
+                                logging.warning(f"Failed to re-enumerate devices: {enum_error}")
+                    
+                    wait_time = retry_interval * attempt  # Exponential backoff
+                    logging.warning(f"Failed to open StreamDeck (attempt {attempt}/{max_retries}): {e}. Retrying in {wait_time}s...")
+                    await asyncio.sleep(wait_time)
+                else:
+                    logging.error(f"Failed to open StreamDeck after {max_retries} attempts: {e}")
+                    logging.info("StreamDeck device not available. Service will continue running.")
+                    return False
+    
+    deck_opened = await open_deck_with_retry()
+
+    # Set up the connection monitor before attempting connection
+    connection_monitor = ConnectionMonitor(hass, tile_manager, reconnect_interval=5, reconnect_retries=3)
+    await connection_monitor.set_credentials(api_password=conf_hass_pw, api_token=conf_hass_token)
+    
+    # Start the connection monitoring task (it will handle reconnection attempts)
+    asyncio.create_task(connection_monitor.monitor())
+
+    # Attempt initial connection
     logging.info("Connecting to %s:%s...", conf_hass_host, conf_hass_port)
     try:
         await hass.connect(api_password=conf_hass_pw, api_token=conf_hass_token)
-    except Exception:
-        logging.exception("Failed to connect to Home Assistant")
-        return
-
-    deck.open()
-    logging.info("Opening StreamDeck device and resetting device")
-    try:
-        deck.reset()
-    except Exception:
-        logging.exception("Failed to reset StreamDeck")
-
-    try:
-        # Ensure the device is awake and at a visible brightness (do this after reset)
-        deck.set_brightness(conf_deck_brightness)
-    except Exception:
-        logging.exception("Failed to set initial StreamDeck brightness")
+    except Exception as e:
+        logging.warning(f"Failed to connect to Home Assistant on startup: {e}")
+        logging.info("Will attempt to reconnect in background. StreamDeck is ready and waiting...")
 
     # Initialize brightness controller if configured
     brightness_controller = BrightnessController(deck=deck, hass=hass, default_brightness=conf_deck_brightness)
     if conf_brightness_entity:
         logging.info(f"Using brightness control via entity: {conf_brightness_entity}")
-        await brightness_controller.start(conf_brightness_entity)
+        # Try to start, but don't fail if Home Assistant isn't connected yet
+        try:
+            await brightness_controller.start(conf_brightness_entity)
+        except Exception as e:
+            logging.debug(f"Could not start brightness controller yet: {e}")
 
     # Initialize screensaver - use entity-based if configured, otherwise use timer-based
     if conf_screensaver_entity:
         logging.info(f"Using entity-based screensaver, monitoring entity: {conf_screensaver_entity}")
         screensaver = EntityBasedScreensaver(deck=deck, hass=hass, brightness_controller=brightness_controller)
-        await screensaver.start(
-            entity_id=conf_screensaver_entity,
-            brightness=conf_deck_brightness,
-            callback=steamdeck_key_state_changed,
-            wake_timeout=conf_screensaver_wake_timeout
-        )
+        # Try to start, but don't fail if Home Assistant isn't connected yet
+        try:
+            await screensaver.start(
+                entity_id=conf_screensaver_entity,
+                brightness=conf_deck_brightness,
+                callback=steamdeck_key_state_changed,
+                wake_timeout=conf_screensaver_wake_timeout
+            )
+        except Exception as e:
+            logging.debug(f"Could not start screensaver yet: {e}")
+        
+        # Register screensaver with connection monitor to activate/deactivate on disconnect
+        connection_monitor.set_screensaver(screensaver)
     else:
         logging.info("Using timer-based screensaver")
         screensaver = ScreenSaver(deck=deck)
         await screensaver.start(brightness=conf_deck_brightness, callback=steamdeck_key_state_changed, timeout=conf_deck_screensaver)
+        
+        # For timer-based screensaver, activate it on disconnect (set brightness to 0)
+        # by creating a simple wrapper
+        class TimerScreensaverWrapper:
+            def __init__(self, ss):
+                self.screensaver = ss
+            async def _activate_on_disconnect(self):
+                await self.screensaver._set_off()
+                logging.info("TimerScreensaver: Activated due to Home Assistant disconnection")
+            async def _restore_after_disconnect(self):
+                # Timer screensaver will handle its own timeout, just restore brightness
+                await self.screensaver._set_on()
+                logging.info("TimerScreensaver: Restored after Home Assistant reconnection")
+        
+        connection_monitor.set_screensaver(TimerScreensaverWrapper(screensaver))
 
+    # Set the initial page (this will work even if Home Assistant isn't connected)
     await tile_manager.set_deck_page(None)
-    await hass.subscribe_to_event('state_changed', hass_state_changed)
+    
+    # If Home Assistant is not connected at startup, set disconnected state
+    if not hass.is_connected():
+        logging.info("Home Assistant is not connected at startup. Showing disconnected state.")
+        tile_manager.is_connected = False
+        # Redraw the page with gray overlay to show disconnected
+        await tile_manager.update_page(force_redraw=True)
+        # Also activate screensaver if available
+        if hasattr(screensaver, '_activate_on_disconnect'):
+            await screensaver._activate_on_disconnect()
+    else:
+        tile_manager.is_connected = True
+    
+    # Subscribe to state changes (will work once Home Assistant is connected)
+    if hass.is_connected():
+        await hass.subscribe_to_event('state_changed', hass_state_changed)
 
     # keep running until a termination signal; background tasks (receiver, callbacks) run on the event loop
     stop_event = asyncio.Event()
@@ -483,9 +718,26 @@ async def main(config):
             logging.exception("Error closing Home Assistant connection")
 
         try:
-            # Reset the StreamDeck device and close it cleanly
-            deck.reset()
-            deck.close()
+            # Properly close the StreamDeck device to release USB resources
+            if deck:
+                try:
+                    logging.debug("Turning off StreamDeck brightness")
+                    deck.set_brightness(0)
+                except Exception:
+                    logging.debug("Could not turn off StreamDeck brightness")
+                    
+                try:
+                    logging.debug("Resetting StreamDeck device")
+                    deck.reset()
+                except Exception:
+                    logging.debug("Could not reset StreamDeck device")
+                    
+                try:
+                    logging.debug("Closing StreamDeck device")
+                    deck.close()
+                    logging.info("StreamDeck device closed cleanly")
+                except Exception as e:
+                    logging.debug(f"Could not close StreamDeck device: {e}")
         except Exception:
             logging.exception("Error closing StreamDeck")
 
